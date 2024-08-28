@@ -40,6 +40,7 @@
   },
   "type": "module",
   "dependencies": {
+    "@sveltejs/adapter-node": "^5.2.2",
     "@turf/boolean-contains": "^7.1.0",
     "fs": "^0.0.1-security",
     "leaflet": "^1.9.4",

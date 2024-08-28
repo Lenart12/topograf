@@ -2,7 +2,7 @@ import { platform } from 'os';
 import util from 'util';
 import { exec } from 'child_process';
 import { tmpdir } from 'os';
-import fs from 'fs';
+import fs from 'node:fs';
 import { CREATE_MAP_PY_FOLDER, DTK50_FOLDER } from '$env/static/private';
 const aexec = util.promisify(exec);
 
