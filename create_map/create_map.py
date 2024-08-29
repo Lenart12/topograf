@@ -5,6 +5,7 @@ import json
 import pyproj
 import json
 import itertools
+import pyproj.transformer
 import rasterio
 import rasterio.merge
 import rasterio.plot
@@ -125,10 +126,14 @@ def get_grid_and_map(map_size_m: tuple[float], map_bounds: tuple[float], dtk50_f
         tr.colrow = lambda x, y: tr.rowcol(x, y)[::-1]
         return tr
     
-    return map_img, grid_img, add_colrow_to_transformer(map_to_world_tr), add_colrow_to_transformer(grid_to_world_tr), add_colrow_to_transformer(real_to_map_tr)
+    map_to_grid_offset = map_to_world_tr.rowcol(*grid_to_world_tr.xy(0,0))[::-1]
+    def map_to_grid(x, y):
+        return (x - map_to_grid_offset[0], y - map_to_grid_offset[1])
+    
+    return map_img, grid_img, add_colrow_to_transformer(map_to_world_tr), add_colrow_to_transformer(grid_to_world_tr), add_colrow_to_transformer(real_to_map_tr), map_to_grid
 
 
-def draw_grid(map_img, grid_img, map_to_world_tr, grid_to_world_tr, real_to_map_tr, epsg, edge_wgs84):
+def draw_grid(map_img, grid_img, map_to_world_tr, grid_to_world_tr, real_to_map_tr, epsg, edge_wgs84, map_to_grid):
     map_draw = ImageDraw.Draw(map_img)
     
     # Draw grid on the map
@@ -136,33 +141,45 @@ def draw_grid(map_img, grid_img, map_to_world_tr, grid_to_world_tr, real_to_map_
 
     # Draw grid border
     border0 = map_to_world_tr.colrow(*grid_to_world_tr.xy(-1, -1))
-    map_draw.rectangle((border0[0], border0[1], border0[0] + grid_img.size[0] + 1, border0[1] + grid_img.size[1] + 1), outline='black', width=2)
+    grid_border = (border0[0], border0[1], border0[0] + grid_img.size[0] + 1, border0[1] + grid_img.size[1] + 1)
+    map_draw.rectangle(grid_border, outline='black', width=2)
 
-    grid_font = ImageFont.truetype('timesi.ttf', 28)
+    grid_font = ImageFont.truetype('timesi.ttf', 48)
+    border_bottom_px = 0
 
     # Draw coordinate system
     if epsg != 'Brez':
         cs_from = pyproj.CRS.from_epsg(3794)
         cs_to = pyproj.CRS.from_epsg(int(epsg.split(':')[1]))
-        cs_tr = pyproj.Transformer.from_crs(cs_from, cs_to)
+        cs_from_to_tr = pyproj.Transformer.from_crs(cs_from, cs_to)
+        cs_to_from_tr = pyproj.Transformer.from_crs(cs_to, cs_from)
 
-        """
+        if not cs_to.is_projected:
+            raise ValueError('The target coordinate system must be projected.')
+
         # Do not draw grid lines near black pixels in the map
         def should_draw_grid_line(x0, y0, line_dir):
-            if x0 < 0 or x0 >= a4_size_px[0] or y0 < 0 or y0 >= a4_size_px[1]:
-                return False
+            (x0, y0) = map_to_grid(x0, y0)
             
             # check 3 wide area += 10 dir around the point for dark pixels (black or near black)
             if line_dir == 'x':
                 for x in range(x0 - 2, x0 + 3):
+                    if x < 0 or x >= grid_img.size[0]:
+                        continue
                     for y in range(y0 - 10, y0 + 10):
-                        col = a4_img_src.getpixel((x, y))
+                        if y < 0 or y >= grid_img.size[1]:
+                            continue
+                        col = grid_img.getpixel((x, y))
                         if col[0] < 20 and col[1] < 20 and col[2] < 20:
                             return False
             else:
                 for x in range(x0 - 10, x0 + 10):
+                    if x < 0 or x >= grid_img.size[0]:
+                        continue
                     for y in range(y0 - 2, y0 + 3):
-                        col = a4_img_src.getpixel((x, y))
+                        if y < 0 or y >= grid_img.size[1]:
+                            continue
+                        col = grid_img.getpixel((x, y))
                         if col[0] < 20 and col[1] < 20 and col[2] < 20:
                             return False
 
@@ -174,47 +191,282 @@ def draw_grid(map_img, grid_img, map_to_world_tr, grid_to_world_tr, real_to_map_
             if line_dir == 'x':
                 assert(x0 == x1)
                 for y in range(int(y0), int(y1)):
-                    if not should_draw_grid_line(x0, y, line_dir):
-                        a4_draw.line((x0, y, x0 + GRID_THICKNESS - 1, y), fill=GRID_COLOR)
+                    if should_draw_grid_line(x0, y, line_dir):
+                        map_draw.line((x0, y, x0 + 2, y), fill='black')
                     else:
                         # Darken the pixel
-                        col = a4_img.getpixel((x0, y))
+                        col = grid_img.getpixel(map_to_grid(x0, y))
                         col = (max(0, col[0] - 90), max(0, col[1] - 90), max(0, col[2] - 90))              
-                        a4_draw.line((x0, y, x0 + GRID_THICKNESS - 1, y), fill=col)
+                        map_draw.line((x0, y, x0 + 2, y), fill=col)
 
             elif line_dir == 'y':
                 assert(y0 == y1)
                 for x in range(int(x0), int(x1)):
-                    if not HIDE_GRID_NEAR_BLACK_PIXELS or should_draw_grid_line(x, y0, line_dir):
-                        a4_draw.line((x, y0, x, y0 + GRID_THICKNESS - 1), fill=GRID_COLOR)
+                    if should_draw_grid_line(x, y0, line_dir):
+                        map_draw.line((x, y0, x, y0 + 2), fill='black')
                     else:
                         # Darken the pixel
-                        col = a4_img.getpixel((x, y0))
+                        col = grid_img.getpixel(map_to_grid(x, y0))
                         col = (max(0, col[0] - 90), max(0, col[1] - 90), max(0, col[2] - 90))
-                        a4_draw.line((x, y0, x, y0 + GRID_THICKNESS - 1), fill=col)
+                        map_draw.line((x, y0, x, y0 + 2), fill=col)
 
         superscript_map = {
             "0": "⁰", "1": "¹", "2": "²", "3": "³", "4": "⁴", "5": "⁵", "6": "⁶", "7": "⁷", "8": "⁸", "9": "⁹"}
 
-        # Draw the grid and grid coordinate labels on map borders
-        for x in range(int(a4_grid0[0]), int(a4_grid1[0] + GRID_SIZE_M), GRID_SIZE_M):
-            p0 = image_to_a4_image(*utm_to_image(x, a4_im0[1]))
-            p1 = image_to_a4_image(*utm_to_image(x, a4_im1[1]))
-            draw_grid_line(p0[0], p0[1] + 1, p1[0], p1[1] - 1, 'x')
+        grid_edge_ws = grid_to_world_tr.xy(grid_img.size[1], 0)
+        grid_edge_en = grid_to_world_tr.xy(0, grid_img.size[0])
+
+        # Convert to target coordinate system
+        grid_edge_ws = cs_from_to_tr.transform(grid_edge_ws[0], grid_edge_ws[1])
+        grid_edge_en = cs_from_to_tr.transform(grid_edge_en[0], grid_edge_en[1])
+
+        grid_edge_ws_grid = (math.ceil(grid_edge_ws[0] / 1000) * 1000, math.ceil(grid_edge_ws[1] / 1000) * 1000)
+        grid_edge_en_grid = (math.floor(grid_edge_en[0] / 1000 + 1) * 1000, math.floor(grid_edge_en[1] / 1000 + 1) * 1000)
+
+        for x in range(int(grid_edge_ws_grid[0]), int(grid_edge_en_grid[0]), 1000):
+            xline_s = map_to_world_tr.colrow(*cs_to_from_tr.transform(x, grid_edge_ws[1]))
+            xline_n = map_to_world_tr.colrow(*cs_to_from_tr.transform(x, grid_edge_en[1]))
+            draw_grid_line(xline_n[0], xline_n[1], xline_s[0], xline_s[1] - 1, 'x')
             cord = f'{int(x):06}'
             txt = f'{superscript_map[cord[-6]]}{cord[-5:-3]}'
-            a4_draw.text((p0[0], p0[1] - 5), txt, fill='black', align='center', anchor='ms', font=GRID_FONT)
-            a4_draw.text((p1[0], p1[1] + 5), txt, fill='black', align='center', anchor='mt', font=GRID_FONT)
+            map_draw.text((xline_s[0], xline_s[1] + 5), txt, fill='black', align='center', anchor='mt', font=grid_font)
+            map_draw.text((xline_n[0], xline_n[1] - 5), txt, fill='black', align='center', anchor='ms', font=grid_font)
 
-        for y in range(int(a4_grid1[1]), int(a4_grid0[1] + GRID_SIZE_M), GRID_SIZE_M):
-            p0 = image_to_a4_image(*utm_to_image(a4_im0[0], y))
-            p1 = image_to_a4_image(*utm_to_image(a4_im1[0], y))
-            draw_grid_line(p0[0] + 1, p0[1], p1[0] - 1, p1[1], 'y')
+        for y in range(int(grid_edge_ws_grid[1]), int(grid_edge_en_grid[1]), 1000):
+            yline_w = map_to_world_tr.colrow(*cs_to_from_tr.transform(grid_edge_ws[0], y))
+            yline_e = map_to_world_tr.colrow(*cs_to_from_tr.transform(grid_edge_en[0], y))
+            draw_grid_line(yline_w[0], yline_w[1], yline_e[0] - 1, yline_e[1], 'y')
             cord = f'{int(y):06}'
             txt = f'{superscript_map[cord[-6]]}{cord[-5:-3]}'
-            a4_draw.text((p0[0] - 5, p0[1]), txt, fill='black', align='center', anchor='rm', font=GRID_FONT)
-            a4_draw.text((p1[0] + 5, p1[1]), txt, fill='black', align='center', anchor='lm', font=GRID_FONT)
-        """
+            map_draw.text((yline_w[0] - 5, yline_w[1]), txt, fill='black', align='center', anchor='rm', font=grid_font)
+            map_draw.text((yline_e[0] + 5, yline_e[1]), txt, fill='black', align='center', anchor='lm', font=grid_font)
+
+        border_bottom_px = grid_font.getbbox('⁸88')[3] + 5
+        
+    # Draw the edge of the map in WGS84
+    if edge_wgs84:
+        # Outer edge
+        border_margins = [px*1.1 for px in grid_font.getbbox('⁸88')][2:]
+        wgs_border = (grid_border[0] - border_margins[0], grid_border[1] - border_margins[1], grid_border[2] + border_margins[0], grid_border[3] + border_margins[1])
+        map_draw.rectangle(wgs_border, outline='black', width=2)
+
+        # Extend inner edge to the border
+        map_draw.line((grid_border[0], wgs_border[1], grid_border[0], wgs_border[3]), fill='black', width=2)
+        map_draw.line((grid_border[2], wgs_border[1], grid_border[2], wgs_border[3]), fill='black', width=2)
+        map_draw.line((wgs_border[0], grid_border[1], wgs_border[2], grid_border[1]), fill='black', width=2)
+        map_draw.line((wgs_border[0], grid_border[3], wgs_border[2], grid_border[3]), fill='black', width=2)
+
+        # Convert decimal degrees to DD°MM'SS" format
+        def deg_to_deg_min_sec(deg):
+            d = int(deg)
+            m = int((deg - d) * 60)
+            s = int((deg - d - m / 60) * 3600)
+            return f'{d}°{m:02}\'{s:02}"'
+
+        def a4_draw_text_rotate(xy, xof, yof, text, angle, font):
+            # Draw text with rotation
+            size = font.getbbox(text)
+            text_img = Image.new('RGBA', (size[2] - size[0], size[3] - size[1]), 0)
+            text_draw = ImageDraw.Draw(text_img)
+            text_draw.text((0, 0), text, font=font, anchor='lt', fill='black')
+            text_img = text_img.rotate(angle, expand=True)
+            map_img.paste(text_img, (int(xy[0] + xof * text_img.width), int(xy[1] + yof * text_img.height)), text_img)
+
+        crs_from = pyproj.CRS.from_epsg(3794)
+        crs_to = pyproj.CRS.from_epsg(4326)
+        wgs_tr = pyproj.Transformer.from_crs(crs_from, crs_to)
+        d96_tr = pyproj.Transformer.from_crs(crs_to, crs_from)
+
+        txt_lat = lambda lat: f'φ = {deg_to_deg_min_sec(lat)}'
+        txt_lon = lambda lon: f'λ = {deg_to_deg_min_sec(lon)}'
+
+        # Show NW corner
+        wgs_nw = wgs_tr.transform(*grid_to_world_tr.xy(0, 0))
+        a4_draw_text_rotate((wgs_border[0] - 5, grid_border[1]), -1, 0, txt_lat(wgs_nw[0]), 90, grid_font)
+        map_draw.text((grid_border[0], wgs_border[1] - 5), txt_lon(wgs_nw[1]), fill='black', align='center', anchor='lb', font=grid_font)
+
+        # Show NE corner
+        wgs_ne = wgs_tr.transform(*grid_to_world_tr.xy(0, grid_img.size[0]))
+        a4_draw_text_rotate((wgs_border[2] + 5, grid_border[1]), 0, 0, txt_lat(wgs_ne[0]), -90, grid_font)
+        map_draw.text((grid_border[2], wgs_border[1] - 5), txt_lon(wgs_ne[1]), fill='black', align='center', anchor='rb', font=grid_font)
+
+        # Show SE corner
+        wgs_se = wgs_tr.transform(*grid_to_world_tr.xy(grid_img.size[1], grid_img.size[0]))
+        a4_draw_text_rotate((wgs_border[2] + 5, grid_border[3]), 0, -1, txt_lat(wgs_se[0]), -90, grid_font)
+        map_draw.text((grid_border[2], wgs_border[3] + 5), txt_lon(wgs_se[1]), fill='black', align='center', anchor='rt', font=grid_font)
+
+        # Show SW corner
+        wgs_sw = wgs_tr.transform(*grid_to_world_tr.xy(grid_img.size[1], 0))
+        a4_draw_text_rotate((wgs_border[0] - 5, grid_border[3]), -1, -1, txt_lat(wgs_sw[0]), 90, grid_font)
+        map_draw.text((grid_border[0], wgs_border[3] + 5), txt_lon(wgs_sw[1]), fill='black', align='center', anchor='lt', font=grid_font)
+
+        # Show NW - NE minute markers
+        avg_lat_n = (wgs_nw[0] + wgs_ne[0]) / 2
+        sec_we_n = (math.ceil(wgs_nw[1] * 60), math.floor(wgs_ne[1] * 60))
+        for sec in range(sec_we_n[0], sec_we_n[1] + 1):
+            xy = map_to_world_tr.colrow(*d96_tr.transform(avg_lat_n, sec / 60))
+            map_draw.line((xy[0], wgs_border[1], xy[0], wgs_border[1] + border_margins[1] * 0.5), fill='black', width=2)
+
+        # Show SE - NE minute markers
+        avg_lon_e = (wgs_ne[1] + wgs_se[1]) / 2
+        sec_sn_e = (math.ceil(wgs_se[0] * 60), math.floor(wgs_ne[0] * 60))
+        for sec in range(sec_sn_e[0], sec_sn_e[1] + 1):
+            xy = map_to_world_tr.colrow(*d96_tr.transform(sec / 60, avg_lon_e))
+            map_draw.line((wgs_border[2], xy[1], wgs_border[2] - border_margins[0] * 0.5, xy[1]), fill='black', width=2)
+
+        # Show SW - SE minute markers
+        avg_lat_s = (wgs_sw[0] + wgs_se[0]) / 2
+        sec_we_s = (math.ceil(wgs_sw[1] * 60), math.floor(wgs_se[1] * 60))
+        for sec in range(sec_we_s[0], sec_we_s[1] + 1):
+            xy = map_to_world_tr.colrow(*d96_tr.transform(avg_lat_s, sec / 60))
+            map_draw.line((xy[0], wgs_border[3], xy[0], wgs_border[3] - border_margins[1] * 0.5), fill='black', width=2)
+
+        # Show SW - NW minute markers
+        avg_lon_w = (wgs_sw[1] + wgs_nw[1]) / 2
+        sec_sn_w = (math.ceil(wgs_sw[0] * 60), math.floor(wgs_nw[0] * 60))
+        for sec in range(sec_sn_w[0], sec_sn_w[1] + 1):
+            xy = map_to_world_tr.colrow(*d96_tr.transform(sec / 60, avg_lon_w))
+            map_draw.line((wgs_border[0], xy[1], wgs_border[0] + border_margins[0] * 0.5, xy[1]), fill='black', width=2)
+
+        return real_to_map_tr.xy(0, wgs_border[3])[0]
+    else:
+        return real_to_map_tr.xy(0, grid_border[3] + border_bottom_px)[0]
+
+def draw_markings(map_img, bbox, naslov1, naslov2, dodatno, slikal, slikad, epsg, edge_wgs84, target_scale, real_to_map_tr):
+    map_draw = ImageDraw.Draw(map_img)
+    
+    title_font = ImageFont.truetype('times.ttf', 60)
+    scale_font = ImageFont.truetype('timesi.ttf', 24)
+    map_info_font = ImageFont.truetype('timesi.ttf', 28)
+
+
+    # Draw the title
+    title_w = 0
+
+    if naslov1 and naslov2:
+        title_p0 = list(real_to_map_tr.colrow((bbox[0] + bbox[2]) / 2, bbox[3]))
+        title_txt = [
+            f'{naslov1}',
+            f'{naslov2}'
+        ][::-1]
+        for txt in title_txt:
+            map_draw.text(title_p0, txt, fill='black', align='center', anchor='mb', font=title_font)
+            title_bbox = title_font.getbbox(txt)
+            title_p0[1] -= title_bbox[3]
+            title_w = max(title_w, title_bbox[2] - title_bbox[0])
+    else:
+        naslov = f'{naslov1}{naslov2}'
+        title_p0 = list(real_to_map_tr.colrow((bbox[0] + bbox[2]) / 2, (bbox[1] + bbox[3]) / 2))
+        map_draw.text(title_p0, naslov, fill='black', align='center', anchor='mm', font=title_font)
+        title_bbox = title_font.getbbox(naslov)
+        title_w = title_bbox[2] - title_bbox[0]
+
+    # Draw the logos
+    logo_margin = 30
+    logo_scale = 0.8
+    bbox_size = real_to_map_tr.colrow(bbox[2] - bbox[0], bbox[3] - bbox[1])
+
+    if slikal:
+        logo_l = Image.open(slikal)
+        logo_l.thumbnail((bbox_size[1] * logo_scale, bbox_size[1] * logo_scale))
+        logo_p0 = (
+            int(title_p0[0] - title_w / 2 - logo_l.size[0] - logo_margin),
+            int(real_to_map_tr.colrow(0, bbox[1])[1] + (bbox_size[1] - logo_l.size[1]) / 2)
+        )
+        map_img.paste(logo_l, logo_p0, logo_l)
+
+    if slikad:
+        logo_d = Image.open(slikad)
+        logo_d.thumbnail((bbox_size[1] * logo_scale, bbox_size[1] * logo_scale))
+        logo_p0 = (
+            int(title_p0[0] + title_w / 2 + logo_margin),
+            int(real_to_map_tr.colrow(0, bbox[1])[1] + (bbox_size[1] - logo_d.size[1]) / 2)
+        )
+        map_img.paste(logo_d, logo_p0, logo_d)
+
+
+    # Draw the scale
+    scale_max_size = 0.05 # 5 cm
+    # Find the largest scale that fits the map:
+    # 5m, 10m, 20m, 50m, 100m, 200m, 500m, 1km, 2km, 5km, 10km, 20km, 50km, 100km, 200km, 500km, 1000km
+    scale_sizes = [5, 10, 20, 50, 100, 200, 500, 1000, 2000, 5000, 10000, 20000, 50000, 100000, 200000, 500000, 1000000][::-1]
+    scale_size = next((s for s in scale_sizes if s / target_scale <= scale_max_size), None)
+
+    if scale_size is None:
+        scale_size = scale_max_size * target_scale
+
+    # Scale position
+    scale_height = scale_font.getbbox('0')[3]
+    scale_length = scale_size / target_scale
+    scale_line_p0 = real_to_map_tr.colrow(bbox[0], bbox[3])
+    scale_line_p1 = real_to_map_tr.colrow(bbox[0] + scale_length, bbox[3])
+
+    # Main scale line
+    map_draw.line((*scale_line_p0, *scale_line_p1), fill='black', width=2)
+    map_draw.line((*scale_line_p0, scale_line_p0[0], scale_line_p0[1] - scale_height), fill='black', width=2)
+    map_draw.line((*scale_line_p1, scale_line_p1[0], scale_line_p1[1] - scale_height), fill='black', width=2)
+    
+    # Scale text
+    scale_txt = lambda s: f'{s}m' if s < 1000 else f'{s//1000}km'
+    map_draw.text((scale_line_p0[0], scale_line_p0[1] - scale_height - 5), scale_txt(0), fill='black', align='center', anchor='lb', font=scale_font)
+    map_draw.text((scale_line_p1[0], scale_line_p1[1] - scale_height - 5), scale_txt(scale_size), fill='black', align='center', anchor='rb', font=scale_font)
+
+    # Scale markings
+    for i in range(1, 20):
+        scale_line_p = real_to_map_tr.colrow(bbox[0] + i * scale_length / 20, bbox[3])
+        i_scale_height = scale_height / 2
+        if i % 2 == 0:
+            i_scale_height *= 1.2
+        if i % 5 == 0:
+            i_scale_height *= 1.5
+        map_draw.line((*scale_line_p, scale_line_p[0], scale_line_p[1] - i_scale_height), fill='black', width=2)
+
+    # Map info
+    def get_coord_system_name():
+        if epsg == 'Brez':
+            if edge_wgs84:
+                return 'WGS84:4326'
+            return 'Brez'
+        extra = ''
+        if edge_wgs84:
+            extra = ', WGS84:4326'
+
+        crs = pyproj.CRS.from_epsg(int(epsg.split(':')[1]))
+
+        match crs.to_epsg():
+            case 3794:
+                return f'D96/TM:3794{extra}'
+            case 3912:
+                return f'D48/GK:3912{extra}'
+            case 8687:
+                return f'D96/UTM33N:8687{extra}'
+            case 32633:
+                return f'WGS84/UTM33N:32633{extra}'
+
+        return f'{crs.name}:{crs.to_epsg()}{extra}'
+
+    map_info_txt = [
+        f'Koord. sistem: {get_coord_system_name()}',
+        f'Merilo: 1:{int(target_scale)}',
+        f'Ekvidistanca: 10m',
+    ][::-1]
+    
+    map_info_p0 = [scale_line_p1[0] + 10, scale_line_p1[1]]
+    for txt in map_info_txt:
+        map_draw.text(map_info_p0, txt, anchor='lb', fill='black', align='left', font=map_info_font)
+        map_info_p0[1] -= map_info_font.getbbox(txt)[3]
+
+    map_source_txt = [
+        f'Vir: Državna topografska karta 1:50.000',
+        f'© Geodetska uprava RS, 2023; Ustvarjeno s topograf.scuke.si',
+        f'{dodatno}'
+    ][::-1]
+    map_source_p0 = list(real_to_map_tr.colrow(bbox[2], bbox[3]))
+    # map_source_p0[1] = scale_line_p1[1]
+    for txt in map_source_txt:
+        map_draw.text(map_source_p0, txt, anchor='rb', fill='black', align='right', font=map_info_font)
+        map_source_p0[1] -= map_info_font.getbbox(txt)[3]
+
         
 def create_map(configuration):
     # Unpack the configuration
@@ -235,360 +487,27 @@ def create_map(configuration):
     dtk50_folder = configuration['dtk50_folder']
     output_file = configuration['output_file']
 
-    map_img, grid_img, map_to_world_tr, grid_to_world_tr, real_to_map_tr = get_grid_and_map((map_size_w_m, map_size_h_m), (map_w, map_s, map_e, map_n), dtk50_folder)
+    map_img, grid_img, map_to_world_tr, grid_to_world_tr, real_to_map_tr, map_to_grid = get_grid_and_map((map_size_w_m, map_size_h_m), (map_w, map_s, map_e, map_n), dtk50_folder)
     
-    draw_grid(map_img, grid_img, map_to_world_tr, grid_to_world_tr, real_to_map_tr, epsg, edge_wgs84)
+    border_bottom = draw_grid(map_img, grid_img, map_to_world_tr, grid_to_world_tr, real_to_map_tr, epsg, edge_wgs84, map_to_grid)
+
+    markings_bbox = (
+        GRID_MARGIN_M[3],
+        float(border_bottom),
+        map_size_w_m - GRID_MARGIN_M[1],
+        map_size_h_m - 0.005
+    )
+
+    draw_markings(map_img, markings_bbox, naslov1, naslov2, dodatno, slikal, slikad, epsg, edge_wgs84, target_scale, real_to_map_tr)
 
     map_img.save(output_file, dpi=(TARGET_DPI, TARGET_DPI))
 
 if __name__ == '__main__':
-    configuration = {}
     if len(sys.argv) != 2:
-        configuration = {
-            'map_size_w_m': 0.297,
-            'map_size_h_m': 0.21,
-            'map_w': 447136,
-            'map_s': 70883,
-            'map_e': 453851,
-            'map_n': 75370,
-            'target_scale': 25000,
-            'naslov1': 'Karta za orientacijo',
-            'naslov2': '',
-            'dodatno': 'Izdelal RJŠ za potrebe orientacije. Karta ni bila reambulirana.',
-            'epsg': 'EPSG:3794',
-            'edge_wgs84': True,
-            'slikal': '',
-            'slikad': '',
-            'dtk50_folder': 'C:\\Users\\Lenart\\Desktop\\DTK50\\res',
-            'output_file': 'test.png'
-        }
-    else:
-        configuration = json.loads(base64.b64decode(sys.argv[1]).decode('utf-8'))
-
+        print('Usage: python create_map.py <base64_configuration>')
+        exit(1)
+    configuration = json.loads(base64.b64decode(sys.argv[1]).decode('utf-8'))
     create_map(configuration)
     exit(0)
 
 raise NotImplementedError('This script is meant to be run as a standalone script.')
-DEGREE_GRID_MARGIN = [30, 45, 30, 45] # Margin around the map for degree markers in pixels
-GRID_THICKNESS = 2
-FONT_TITLE = ImageFont.truetype('times.ttf', 36)
-GRID_FONT = ImageFont.truetype('timesi.ttf', 28)
-SCALE_FONT = ImageFont.truetype('timesi.ttf', 16)
-HIDE_GRID_NEAR_BLACK_PIXELS = True
-GRID_COLOR = '#151515'
-
-
-# Degree grid transformer
-CRS_D96_TM = pyproj.CRS.from_epsg(3794 ) # D96/TM
-CRS_WGS84 = pyproj.CRS.from_epsg(4326)  # WGS84
-utm_to_deg = pyproj.Transformer.from_crs(CRS_D96_TM, CRS_WGS84)
-deg_to_utm = pyproj.Transformer.from_crs(CRS_WGS84, CRS_D96_TM)
-
-
-# Function for converting between image and UTM coordinates
-# x, y - image coordinates
-# E, N - UTM coordinates
-def image_to_utm(x, y):
-    return (calibration_points[0][2] + (x - calibration_points[0][0]) * scale_x, calibration_points[0][3] + (y - calibration_points[0][1]) * scale_y)
-
-# Function for converting UTM coordinates to image coordinates
-# E, N - UTM coordinates
-# x, y - image coordinates
-def utm_to_image(E, N):
-    return ((E - calibration_points[0][2]) / scale_x + calibration_points[0][0], (N - calibration_points[0][3]) / scale_y + calibration_points[0][1])
-
-map_img_src = map_img.copy()
-draw = ImageDraw.Draw(map_img)
-
-
-
-#### WORLD TO MAP #####
-            
-# Draw the A4 paper
-# A4 paper size in meters
-a4_size_world = (TARGET_MAP_SIZE_M[0] * TARGET_MAP_SCALE, TARGET_MAP_SIZE_M[1] * TARGET_MAP_SCALE)
-a4_0 = utm_to_image(*MAP_ORIGIN)
-a4_1 = utm_to_image(MAP_ORIGIN[0] + a4_size_world[0], MAP_ORIGIN[1] - a4_size_world[1])
-
-
-# Calculate the grid coordinates of the A4 paper
-a4_im0 = image_to_utm(a4_0[0] + GRID_MARGIN[3], a4_0[1] + GRID_MARGIN[0])
-a4_im1 = image_to_utm(a4_1[0] - GRID_MARGIN[1], a4_1[1] - GRID_MARGIN[2])
-
-a4_grid0 = (math.ceil(a4_im0[0] / GRID_SIZE_M) * GRID_SIZE_M, math.floor(a4_im0[1] / GRID_SIZE_M) * GRID_SIZE_M)
-a4_grid1 = (math.floor(a4_im1[0] / GRID_SIZE_M) * GRID_SIZE_M, math.ceil(a4_im1[1] / GRID_SIZE_M) * GRID_SIZE_M)
-
-# Draw the grid coordinates of the A4 paper
-if DRAW_DEBUG_GRID:
-    a4_im0_image = utm_to_image(*a4_im0)
-    draw.ellipse((a4_im0_image[0]-5, a4_im0_image[1]-5, a4_im0_image[0]+5, a4_im0_image[1]+5), fill='blue')
-    draw.text((a4_im0_image[0]+10, a4_im0_image[1]-10), f'({a4_im0[0]//1000%100}, {a4_im0[1]//1000%100})', fill='blue')
-    a4_im1_image = utm_to_image(*a4_im1)
-    draw.ellipse((a4_im1_image[0]-5, a4_im1_image[1]-5, a4_im1_image[0]+5, a4_im1_image[1]+5), fill='blue')
-    draw.text((a4_im1_image[0]+10, a4_im1_image[1]-10), f'({a4_im1[0]//1000%100}, {a4_im1[1]//1000%100})', fill='blue')
-
-    a4_grid0_image = utm_to_image(*a4_grid0)
-    draw.ellipse((a4_grid0_image[0]-5, a4_grid0_image[1]-5, a4_grid0_image[0]+5, a4_grid0_image[1]+5), fill='blue')
-    draw.text((a4_grid0_image[0]+10, a4_grid0_image[1]-10), f'({a4_grid0[0]//1000%100}, {a4_grid0[1]//1000%100})', fill='blue')
-    a4_grid1_image = utm_to_image(*a4_grid1)
-    draw.ellipse((a4_grid1_image[0]-5, a4_grid1_image[1]-5, a4_grid1_image[0]+5, a4_grid1_image[1]+5), fill='blue')
-    draw.text((a4_grid1_image[0]+10, a4_grid1_image[1]-10), f'({a4_grid1[0]//1000%100}, {a4_grid1[1]//1000%100})', fill='blue')
-
-
-def image_to_a4_image(x, y):
-    return (x - a4_0[0], y - a4_0[1])
-def a4_image_to_image(x, y):
-    return (x + a4_0[0], y + a4_0[1])
-
-# Calulate DPI
-# A4 paper size in pixels
-a4_size_px = (a4_1[0] - a4_0[0] - 1, a4_1[1] - a4_0[1] - 1)
-# DPI
-dpm = (a4_size_px[0] / TARGET_MAP_SIZE_M[0], a4_size_px[1] / TARGET_MAP_SIZE_M[1])
-# Convert dpm to dpi
-dpi_xy = (dpm[0] * 0.0254, dpm[1] * 0.0254)
-dpi = sum(dpi_xy) / 2
-# print(f'DPI: {dpi}, DPI_X: {dpi_xy[0]}, DPI_Y: {dpi_xy[1]}, Relative error: {abs(dpi_xy[0] - dpi_xy[1]) / dpi * 100}%')
-
-# Create a new image with the A4 paper
-a4_img = Image.new('RGB', [int(p) for p in a4_size_px], 0xFFFFFF)
-a4_draw = ImageDraw.Draw(a4_img)
-
-# Draw the map inside the margin
-selected_area = map_img_src.crop((a4_0[0] + GRID_MARGIN[3], a4_0[1] + GRID_MARGIN[0], a4_1[0] - GRID_MARGIN[1] - 1, a4_1[1] - GRID_MARGIN[2]))
-def change_contrast(img, level):
-    if level == 0:
-        return img
-    factor = (259 * (level + 255)) / (255 * (259 - level))
-    def contrast(c):
-        return 128 + factor * (c - 128)
-    return img.point(contrast)
-
-selected_area = change_contrast(selected_area, 0)
-
-if e('DRAW_MAP_BACKGROUND', bool):
-    a4_img.paste(selected_area, (GRID_MARGIN[3], GRID_MARGIN[0]))
-
-#### -WORLD TO MAP- #####
-
-
-#### MAP STYLING #####
-
-# Create copy for grid line generation
-a4_img_src = a4_img.copy()
-
-# Draw border of the map
-a4_draw.rectangle((GRID_MARGIN[3], GRID_MARGIN[0], a4_size_px[0] - GRID_MARGIN[1], a4_size_px[1] - GRID_MARGIN[2]), outline='black', width=GRID_THICKNESS)
-
-# Convert decimal degrees to DD°MM'SS" format
-def deg_to_deg_min_sec(deg):
-    d = int(deg)
-    m = int((deg - d) * 60)
-    s = int((deg - d - m / 60) * 3600)
-    return f'{d}°{m:02}\'{s:02}"'
-
-def a4_draw_text_rotate(xy, xof, yof, text, angle, font):
-    # Draw text with rotation
-    size = font.getbbox(text)
-    text_img = Image.new('RGBA', (size[2] - size[0], size[3] - size[1]), 0)
-    text_draw = ImageDraw.Draw(text_img)
-    text_draw.text((0, 0), text, font=font, anchor='lt', fill='black')
-    text_img = text_img.rotate(angle, expand=True)
-    a4_img.paste(text_img, (int(xy[0] + xof * text_img.width), int(xy[1] + yof * text_img.height)), text_img)
-
-# Draw the degree markers
-a4_draw.rectangle(
-    (GRID_MARGIN[3] - DEGREE_GRID_MARGIN[3], GRID_MARGIN[0] - DEGREE_GRID_MARGIN[0],
-     a4_size_px[0] - GRID_MARGIN[1] + DEGREE_GRID_MARGIN[1], a4_size_px[1] - GRID_MARGIN[2] + DEGREE_GRID_MARGIN[2]),
-     outline='black', width=GRID_THICKNESS)
-# NW
-a4_draw.line((GRID_MARGIN[3] - DEGREE_GRID_MARGIN[3], GRID_MARGIN[0],
-              GRID_MARGIN[3], GRID_MARGIN[0]), fill='black', width=GRID_THICKNESS)
-a4_draw.line((GRID_MARGIN[3], GRID_MARGIN[0] - DEGREE_GRID_MARGIN[0],
-                GRID_MARGIN[3], GRID_MARGIN[0]), fill='black', width=GRID_THICKNESS)
-gkNW = a4_im0
-utm_to_deg_NW = utm_to_deg.transform(*gkNW)
-a4_draw_text_rotate((GRID_MARGIN[3] - DEGREE_GRID_MARGIN[3] - 3, GRID_MARGIN[0]), -1, 0, f'φ = {deg_to_deg_min_sec(utm_to_deg_NW[0])}', 90, GRID_FONT)
-a4_draw.text((GRID_MARGIN[3], GRID_MARGIN[0] - DEGREE_GRID_MARGIN[0] - 3), f'λ = {deg_to_deg_min_sec(utm_to_deg_NW[1])}', fill='black', align='center', anchor='lb', font=GRID_FONT)
-
-# NE
-a4_draw.line((a4_size_px[0] - GRID_MARGIN[1] + DEGREE_GRID_MARGIN[1], GRID_MARGIN[0] + 1,
-              a4_size_px[0] - GRID_MARGIN[1], GRID_MARGIN[0] + 1), fill='black', width=GRID_THICKNESS)
-a4_draw.line((a4_size_px[0] - GRID_MARGIN[1] - 1, GRID_MARGIN[0] - DEGREE_GRID_MARGIN[0],
-                a4_size_px[0] - GRID_MARGIN[1] - 1, GRID_MARGIN[0]), fill='black', width=GRID_THICKNESS)
-gkNE = (a4_im1[0], a4_im0[1])
-utm_to_deg_NE = utm_to_deg.transform(*gkNE)
-a4_draw_text_rotate((a4_size_px[0] - GRID_MARGIN[1] + DEGREE_GRID_MARGIN[1] + 3, GRID_MARGIN[0]), 0, 0, f'φ = {deg_to_deg_min_sec(utm_to_deg_NE[0])}', -90, GRID_FONT)
-a4_draw.text((a4_size_px[0] - GRID_MARGIN[1], GRID_MARGIN[0] - DEGREE_GRID_MARGIN[0] - 3), f'λ = {deg_to_deg_min_sec(utm_to_deg_NE[1])}', fill='black', align='center', anchor='rb', font=GRID_FONT)
-
-# SE
-a4_draw.line((a4_size_px[0] - GRID_MARGIN[1] + DEGREE_GRID_MARGIN[1], a4_size_px[1] - GRID_MARGIN[2],
-              a4_size_px[0] - GRID_MARGIN[1], a4_size_px[1] - GRID_MARGIN[2]), fill='black', width=GRID_THICKNESS)
-a4_draw.line((a4_size_px[0] - GRID_MARGIN[1], a4_size_px[1] - GRID_MARGIN[2] + DEGREE_GRID_MARGIN[2],
-                a4_size_px[0] - GRID_MARGIN[1], a4_size_px[1] - GRID_MARGIN[2]), fill='black', width=GRID_THICKNESS)
-gkSE = a4_im1
-utm_to_deg_SE = utm_to_deg.transform(*gkSE)
-a4_draw_text_rotate((a4_size_px[0] - GRID_MARGIN[1] + DEGREE_GRID_MARGIN[1] + 3, a4_size_px[1] - GRID_MARGIN[2]), 0, -1, f'φ = {deg_to_deg_min_sec(utm_to_deg_SE[0])}', -90, GRID_FONT)
-a4_draw.text((a4_size_px[0] - GRID_MARGIN[1], a4_size_px[1] - GRID_MARGIN[2] + DEGREE_GRID_MARGIN[2] + 3), f'λ = {deg_to_deg_min_sec(utm_to_deg_SE[1])}', fill='black', align='center', anchor='rt', font=GRID_FONT)
-
-# SW
-a4_draw.line((GRID_MARGIN[3] - DEGREE_GRID_MARGIN[3], a4_size_px[1] - GRID_MARGIN[2] - 1,
-              GRID_MARGIN[3], a4_size_px[1] - GRID_MARGIN[2] - 1), fill='black', width=GRID_THICKNESS)
-a4_draw.line((GRID_MARGIN[3] + 1, a4_size_px[1] - GRID_MARGIN[2] + DEGREE_GRID_MARGIN[2],
-                GRID_MARGIN[3] + 1, a4_size_px[1] - GRID_MARGIN[2]), fill='black', width=GRID_THICKNESS)
-gkSW = (a4_im0[0], a4_im1[1])
-utm_to_deg_SW = utm_to_deg.transform(*gkSW)
-a4_draw_text_rotate((GRID_MARGIN[3] - DEGREE_GRID_MARGIN[3] - 3, a4_size_px[1] - GRID_MARGIN[2]), -1, -1, f'φ = {deg_to_deg_min_sec(utm_to_deg_SW[0])}', 90, GRID_FONT)
-a4_draw.text((GRID_MARGIN[3], a4_size_px[1] - GRID_MARGIN[2] + DEGREE_GRID_MARGIN[2] + 3), f'λ = {deg_to_deg_min_sec(utm_to_deg_SW[1])}', fill='black', align='center', anchor='lt', font=GRID_FONT)
-
-# Draw minute's markers
-# NW - NE
-sec_nw_ne = (math.ceil(utm_to_deg_NW[1] * 60), math.floor(utm_to_deg_NE[1] * 60))
-nw_ne_lat = (utm_to_deg_NW[0] + utm_to_deg_NE[0]) / 2
-for sec in range(sec_nw_ne[0], sec_nw_ne[1] + 1):
-    xy = image_to_a4_image(*utm_to_image(*deg_to_utm.transform(nw_ne_lat, sec / 60)))
-    a4_draw.line((xy[0], GRID_MARGIN[0] - DEGREE_GRID_MARGIN[0], xy[0], GRID_MARGIN[0] - DEGREE_GRID_MARGIN[0] + 15), fill='black', width=GRID_THICKNESS)
-
-# NE - SE
-sec_ne_se = (math.floor(utm_to_deg_SE[0] * 60), math.ceil(utm_to_deg_NE[0] * 60))
-ne_se_lon = (utm_to_deg_NE[1] + utm_to_deg_SE[1]) / 2
-for sec in range(sec_ne_se[0], sec_ne_se[1] + 1):
-    xy = image_to_a4_image(*utm_to_image(*deg_to_utm.transform(sec / 60, ne_se_lon)))
-    a4_draw.line((a4_size_px[0] - GRID_MARGIN[1] + DEGREE_GRID_MARGIN[1], xy[1],  a4_size_px[0] - GRID_MARGIN[1] + DEGREE_GRID_MARGIN[1] - 15, xy[1]), fill='black', width=GRID_THICKNESS)
-
-# SE - SW
-sec_se_sw = (math.floor(utm_to_deg_SW[1] * 60), math.ceil(utm_to_deg_SE[1] * 60))
-se_sw_lat = (utm_to_deg_SW[0] + utm_to_deg_SE[0]) / 2
-for sec in range(sec_se_sw[0], sec_se_sw[1] + 1):
-    xy = image_to_a4_image(*utm_to_image(*deg_to_utm.transform(se_sw_lat, sec / 60)))
-    a4_draw.line((xy[0], a4_size_px[1] - GRID_MARGIN[2] + DEGREE_GRID_MARGIN[2], xy[0], a4_size_px[1] - GRID_MARGIN[2] + DEGREE_GRID_MARGIN[2] - 15), fill='black', width=GRID_THICKNESS)
-
-# SW - NW
-sec_sw_nw = (math.ceil(utm_to_deg_SW[0] * 60), math.floor(utm_to_deg_NW[0] * 60))
-sw_nw_lon = (utm_to_deg_SW[1] + utm_to_deg_NW[1]) / 2
-for sec in range(sec_sw_nw[0], sec_sw_nw[1] + 1):
-    xy = image_to_a4_image(*utm_to_image(*deg_to_utm.transform(sec / 60, sw_nw_lon)))
-    a4_draw.line((GRID_MARGIN[3] - DEGREE_GRID_MARGIN[3], xy[1], GRID_MARGIN[3] - DEGREE_GRID_MARGIN[3] + 15, xy[1]), fill='black', width=GRID_THICKNESS)
-
-# Supersampling draw
-SS_RATIO = CP_SUPERSAMPLING
-ss_img = Image.new('RGBA', [int(p * SS_RATIO) for p in a4_size_px])
-cp_draw = ImageDraw.Draw(ss_img)
-# Draw control points
-ellipse_size = CONTROL_POINT_SIZE * TARGET_MAP_SCALE / scale_x / 2 * SS_RATIO
-first_cp = None
-last_cp = None
-
-def triangle_distance(theta):
-    return ellipse_size / (2 * math.cos(math.acos(math.sin(3*(theta + math.pi)))/3))
-
-for i in itertools.count():
-    cp = e(f'KT_{i}', str)
-    if not cp:
-        break
-    cp = cp.split(',')
-    cp = [float(cp[0]), float(cp[1])]
-    cp_utm = deg_to_utm.transform(*cp)
-    cp_img = utm_to_image(*cp_utm)
-    cp_a4_img = image_to_a4_image(*cp_img)
-    ss_a4_img = [c * SS_RATIO for c in cp_a4_img]
-
-
-    # Middle dot
-    if CONTROL_POINT_DOT_SIZE:
-        cp_draw.ellipse(
-            (ss_a4_img[0] - CONTROL_POINT_DOT_SIZE * SS_RATIO, ss_a4_img[1] - CONTROL_POINT_DOT_SIZE * SS_RATIO,
-             ss_a4_img[0] + CONTROL_POINT_DOT_SIZE * SS_RATIO, ss_a4_img[1] + CONTROL_POINT_DOT_SIZE * SS_RATIO), fill=CONTROL_POINT_COLOR)
-
-    cp_text = f'KT{i}'
-    # Draw triangle for first control point
-    if i == 0:
-        cp_draw.polygon([
-            (ss_a4_img[0], ss_a4_img[1] - ellipse_size),
-            (ss_a4_img[0] + ellipse_size * math.cos(math.radians(30)), ss_a4_img[1] + ellipse_size * math.sin(math.radians(30))),
-            (ss_a4_img[0] - ellipse_size * math.cos(math.radians(30)), ss_a4_img[1] + ellipse_size * math.sin(math.radians(30))),
-        ], outline=CONTROL_POINT_COLOR, width=3 * SS_RATIO)
-        first_cp = ss_a4_img
-        cp_text = 'START'
-    else:
-        # Circle outline
-        cp_draw.ellipse((ss_a4_img[0] - ellipse_size, ss_a4_img[1] - ellipse_size, ss_a4_img[0] + ellipse_size, ss_a4_img[1] + ellipse_size), outline=CONTROL_POINT_COLOR, width=3 * SS_RATIO)
-        # Line to previous control point but only between the elipse borders
-        theta = math.atan2(ss_a4_img[1] - last_cp[1], ss_a4_img[0] - last_cp[0])
-        last_cp_radius = ellipse_size
-        if i == 1: # First is triangle
-            last_cp_radius = triangle_distance(theta)
-
-        if DRAW_CP_TRACK:
-            cp_draw.line(
-                (last_cp[0] + last_cp_radius * math.cos(theta), last_cp[1] + last_cp_radius * math.sin(theta),
-                ss_a4_img[0] - ellipse_size * math.cos(theta), ss_a4_img[1] - ellipse_size * math.sin(theta)), fill=CONTROL_POINT_COLOR, width=3 * SS_RATIO)
-
-    last_cp = ss_a4_img
-    # Draw CP number
-    a4_draw.text((cp_a4_img[0] + ellipse_size / SS_RATIO + 3, cp_a4_img[1]), cp_text, fill=CONTROL_POINT_COLOR, align='center', anchor='lb', font=FONT_TITLE)
-
-# Draw line between first and last control point
-if first_cp and last_cp and DRAW_CP_TRACK:
-    theta = math.atan2(last_cp[1] - first_cp[1], last_cp[0] - first_cp[0])
-    last_cp_radius = triangle_distance(theta)
-    cp_draw.line(
-        (first_cp[0] + last_cp_radius * math.cos(theta), first_cp[1] + last_cp_radius * math.sin(theta),
-         last_cp[0] - ellipse_size * math.cos(theta), last_cp[1] - ellipse_size * math.sin(theta)), fill=CONTROL_POINT_COLOR, width=3 * SS_RATIO)
-
-# Reduce supersampled image to normal size
-sampled_img = ss_img.resize(a4_img.size)
-a4_img.paste(sampled_img, (0, 0), sampled_img)
-
-# Draw scale
-scale_y_offset = 33
-scale_x_offset = lambda x: GRID_MARGIN[3] + x/scale_x
-a4_draw.line((scale_x_offset(0), a4_size_px[1] - scale_y_offset, scale_x_offset(1000), a4_size_px[1] - scale_y_offset), fill='black', width=GRID_THICKNESS)
-draw_vertical_line = lambda x, h: a4_draw.line((scale_x_offset(x), a4_size_px[1] - scale_y_offset, scale_x_offset(x), a4_size_px[1] - scale_y_offset - h), fill='black')
-draw_vertical_line(0, 15)
-draw_vertical_line(500, 15)
-for x in range(0, 500, 25):
-    draw_vertical_line(x, 10 if x % 100 != 0 else 13)
-draw_vertical_line(750, 10)
-draw_vertical_line(1000, 15)
-a4_draw.text((scale_x_offset(0), a4_size_px[1] - scale_y_offset - 20), '500m', fill='black', align='center', anchor='ls', font=SCALE_FONT)
-a4_draw.text((scale_x_offset(500), a4_size_px[1] - scale_y_offset - 20), '0m', fill='black', align='center', anchor='ms', font=SCALE_FONT)
-a4_draw.text((scale_x_offset(1000), a4_size_px[1] - scale_y_offset - 20), '500m', fill='black', align='center', anchor='rs', font=SCALE_FONT)
-a4_draw.text((scale_x_offset(1000) + 10, a4_size_px[1] - scale_y_offset - 53), MAP_INFO, fill='black', align='left', font=SCALE_FONT)
-
-# Draw logos
-LOGO_SIZE = 80
-
-if e('MAP_LOGO_LEFT', str):
-    logo_left = Image.open(e('MAP_LOGO_LEFT', str))
-    logo_left.thumbnail((LOGO_SIZE, LOGO_SIZE))
-    a4_img.paste(logo_left, (int(a4_size_px[0] * 3/8 - LOGO_SIZE/2), int(a4_size_px[1] - 111)), logo_left)
-
-if e('MAP_LOGO_RIGHT', str):
-    logo_right = Image.open(e('MAP_LOGO_RIGHT', str))
-    logo_right.thumbnail((LOGO_SIZE, LOGO_SIZE))
-    a4_img.paste(logo_right, (int(a4_size_px[0] * 5/8 - LOGO_SIZE/2), int(a4_size_px[1] - 111)), logo_right)
-
-
-# Draw 3mm inset border around the A4 paper
-if e('DRAW_PRINT_BORDER', bool):
-    border_px_x = 0.0045 * dpm[0]
-    border_px_y = 0.004 * dpm[1]
-    a4_draw.rectangle((border_px_x, border_px_y, a4_size_px[0] - border_px_x, a4_size_px[1] - border_px_y), outline='red', width=1)
-#### -MAP STYLING- #####
-
-# Draw title
-a4_draw.text((a4_size_px[0] / 2, a4_size_px[1] - 73), MAP_TITLE, fill='black', align='center', anchor='mm', font=FONT_TITLE)
-
-# Draw credit
-a4_draw.text((a4_size_px[0] - GRID_MARGIN[1], a4_size_px[1] - 73), MAP_CREDIT, fill='black', align='right', anchor='rs', font=SCALE_FONT)
-
-# Save the debug image
-
-# Make sure the output directory exists
-os.makedirs(os.path.dirname(e('MAP_OUTPUT_PREFIX', str)), exist_ok=True)
-
-output_prefix = e('MAP_OUTPUT_PREFIX', str)
-if e('OUTPUT_CALIBRATED_MAP', bool):
-    map_img.save(f'{output_prefix}-calibrated.png', dpi=dpi_xy)
-
