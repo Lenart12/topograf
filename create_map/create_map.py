@@ -70,6 +70,9 @@ def get_raster_map(dtk50_folder: str, bounds: tuple[float]):
 
     if len(selected_files) == 0:
         raise ValueError('No raster files intersect with the given bounds.')
+    
+    if len(selected_files) > 4:
+        raise ValueError('Too many raster files intersect with the given bounds. Please select a smaller area.')
 
     src_files_to_mosaic = []
     for fp in selected_files:
