@@ -4,7 +4,6 @@ import math
 import json
 import pyproj
 import json
-import itertools
 import pyproj.transformer
 import rasterio
 import rasterio.merge
