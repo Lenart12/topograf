@@ -432,17 +432,17 @@ def draw_markings(map_img, bbox, naslov1, naslov2, dodatno, slikal, slikad, epsg
 
         crs = pyproj.CRS.from_epsg(int(epsg.split(':')[1]))
 
-        match crs.to_epsg():
-            case 3794:
-                return f'D96/TM:3794{extra}'
-            case 3912:
-                return f'D48/GK:3912{extra}'
-            case 8687:
-                return f'D96/UTM33N:8687{extra}'
-            case 32633:
-                return f'WGS84/UTM33N:32633{extra}'
-
-        return f'{crs.name}:{crs.to_epsg()}{extra}'
+        crs_epsg = crs.to_epsg()
+        if crs_epsg == 3794:
+            return f'D96/TM:3794{extra}'
+        elif crs_epsg == 3912:
+            return f'D48/GK:3912{extra}'
+        elif crs_epsg == 8687:
+            return f'D96/UTM33N:8687{extra}'
+        elif crs_epsg == 32633:
+            return f'WGS84/UTM33N:32633{extra}'
+        else:
+            return f'{crs.name}:{crs.to_epsg()}{extra}'
 
     map_info_txt = [
         f'Koord. sistem: {get_coord_system_name()}',
