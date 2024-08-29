@@ -31,12 +31,12 @@ interface CreateMapRequest {
 async function validate_request_file(file: File | string | null) {
   if (file === null) return '';
   if (file === '') return '';
-  if (!(file instanceof File)) throw new Error('Invalid file');
+  if (!(file instanceof File)) throw new Error('Datoteka za sliko ni datoteka');
 
-  if (!['image/jpeg', 'image/png'].includes(file.type)) throw new Error('Invalid slika (type)');
-  if (file.size > 5000000) throw new Error('Invalid slika (size)');
-  if (file.name.length > 100) throw new Error('Invalid slika (name length)');
-  if (!allowed_chars.test(file.name)) throw new Error('Invalid slika (name)');
+  if (!['image/jpeg', 'image/png'].includes(file.type)) throw new Error('Datoteka za sliko ni slika (jpeg/png)');
+  if (file.size > 5000000) throw new Error('Slika je prevelika (max 5MB)');
+  if (file.name.length > 100) throw new Error('Slika ima predolgo ime (max 100 znakov)');
+  if (!allowed_chars.test(file.name)) throw new Error('Ime slike vsebuje nedovoljene znake');
 
   const file_path = `${tmpdir()}/topodtk-${Array.from({ length: 32 }, () => Math.floor(Math.random() * 16).toString(16)).join('')}-${file.name}`;
   const ab = Buffer.from(await file.arrayBuffer());
@@ -47,27 +47,27 @@ async function validate_request_file(file: File | string | null) {
 async function validate_request(fd: FormData) {
   const validated = {} as CreateMapRequest;
   validated.map_size_w_m = parseFloat(fd.get('map_size_w_m') as string);
-  if (isNaN(validated.map_size_w_m)) throw new Error('Invalid map_size_w_m');
+  if (isNaN(validated.map_size_w_m) || validated.map_size_w_m > 1) throw new Error('Velikost karte je prevelika (širina) (max 1m)');
   validated.map_size_h_m = parseFloat(fd.get('map_size_h_m') as string);
-  if (isNaN(validated.map_size_h_m)) throw new Error('Invalid map_size_h_m');
+  if (isNaN(validated.map_size_h_m) || validated.map_size_h_m > 1) throw new Error('Velikost karte je prevelika (višina) (max 1m)');
   validated.map_w = parseInt(fd.get('map_w') as string);
-  if (isNaN(validated.map_w)) throw new Error('Invalid map_w');
+  if (isNaN(validated.map_w)) throw new Error('Napačen map_w');
   validated.map_s = parseInt(fd.get('map_s') as string);
-  if (isNaN(validated.map_s)) throw new Error('Invalid map_s');
+  if (isNaN(validated.map_s)) throw new Error('Napačen map_s');
   validated.map_e = parseInt(fd.get('map_e') as string);
-  if (isNaN(validated.map_e)) throw new Error('Invalid map_e');
+  if (isNaN(validated.map_e)) throw new Error('Napačen map_e');
   validated.map_n = parseInt(fd.get('map_n') as string);
-  if (isNaN(validated.map_n)) throw new Error('Invalid map_n');
+  if (isNaN(validated.map_n)) throw new Error('Napačen map_n');
   validated.target_scale = parseInt(fd.get('target_scale') as string);
-  if (isNaN(validated.target_scale)) throw new Error('Invalid target_scale');
+  if (isNaN(validated.target_scale) || validated.target_scale > 100000) throw new Error('Merilo je napačno ali preveliko (max 1:100000)');
   validated.naslov1 = fd.get('naslov1') as string;
-  if (validated.naslov1.length > 100) throw new Error('Invalid naslov1');
+  if (validated.naslov1.length > 30) throw new Error('Naslov (1) je predolg (max 30 znakov)');
   validated.naslov2 = fd.get('naslov2') as string;
-  if (validated.naslov2.length > 100) throw new Error('Invalid naslov2');
+  if (validated.naslov2.length > 30) throw new Error('Naslov (2) je predolg (max 30 znakov)');
   validated.dodatno = fd.get('dodatno') as string;
-  if (validated.dodatno.length > 100) throw new Error('Invalid dodatno');
+  if (validated.dodatno.length > 70) throw new Error('Dodatna vrstica je predolgo (max 70 znakov)');
   validated.epsg = fd.get('epsg') as string;
-  if (!/^EPSG:\d+$|^Brez$/.test(validated.epsg)) throw new Error('Invalid epsg');
+  if (!/^EPSG:\d+$|^Brez$/.test(validated.epsg)) throw new Error('Koordinatni sistem je napačen (EPSG:xxxx ali Brez)');
   validated.edge_wgs84 = fd.get('edge_wgs84') === 'true';
   try {
     validated.slikal = await validate_request_file(fd.get('slikal') as File | string | null);
@@ -105,7 +105,7 @@ export async function POST({ request, cookies }) {
     return new Response(pdf, { headers: { 'Content-Type': 'application/pdf' } });
   } catch (error) {
     console.error(`Error: ${error}`);
-    return new Response("Error occurred while running the script", { status: 500 });
+    return new Response("Interna napaka pri ustvarjanju karte", { status: 500 });
   } finally {
     if (validated.slikal) await fs.promises.unlink(validated.slikal);
     if (validated.slikad) await fs.promises.unlink(validated.slikad);
