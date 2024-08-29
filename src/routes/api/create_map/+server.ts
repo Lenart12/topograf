@@ -5,7 +5,7 @@ import { tmpdir } from 'os';
 import fs from 'node:fs';
 import { CREATE_MAP_PY_FOLDER, DTK50_FOLDER } from '$env/static/private';
 const aexec = util.promisify(exec);
-
+import { RateLimiter } from 'sveltekit-rate-limiter/server';
 
 const allowed_chars = /^[a-zA-Z0-9À-ž\-\.\,\! ]*$/;
 
@@ -82,7 +82,16 @@ async function validate_request(fd: FormData) {
   return validated;
 }
 
-export async function POST({ request, cookies }) {
+const limiter = new RateLimiter({
+  IP: [10, 'h'],
+  IPUA: [2, 'm'],
+});
+
+export async function POST(event) {
+  const { request } = event;
+  if (await limiter.isLimited(event))
+    return new Response("Preveč zahtev", { status: 429 });
+
   let validated: CreateMapRequest;
   try {
     validated = await validate_request(await request.formData());
