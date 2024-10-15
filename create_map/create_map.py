@@ -149,11 +149,17 @@ def get_grid_and_map(map_size_m: tuple[float], map_bounds: tuple[float], raster_
     map_size_px = [p + 1 for p in real_to_map_tr.rowcol(*map_size_m)[::-1]]
     map_img = Image.new('RGB', map_size_px, 0xFFFFFF)
 
-    # Get the raster map
-    grid_raster = get_raster_map(raster_folder, map_bounds)
+    # Calculate the size of the grid in pixels
     grid_margin_px = [int(m * target_pxpm) for m in GRID_MARGIN_M]
     grid_size_px = [map_size_px[0] - grid_margin_px[1] - grid_margin_px[3], map_size_px[1] - grid_margin_px[0] - grid_margin_px[2]]
-    grid_img = Image.fromarray(rasterio.plot.reshape_as_image(grid_raster), 'RGB').resize(grid_size_px)
+
+    # Get the raster map
+    if raster_folder != '':
+        grid_raster = get_raster_map(raster_folder, map_bounds)
+        grid_img = Image.fromarray(rasterio.plot.reshape_as_image(grid_raster), 'RGB').resize(grid_size_px)
+    else:
+        logger.info('Skipping raster map.')
+        grid_img = Image.new('RGB', grid_size_px, 0xFFFFFF)
 
     # Create a transformer for converting between the grid and the world
     grid_to_world_tr = rasterio.transform.AffineTransformer(rasterio.transform.from_bounds(*map_bounds, *grid_img.size))
@@ -604,6 +610,7 @@ def main():
         logger.warning('Using default configuration')
         sys.argv.append('eyJtYXBfc2l6ZV93X20iOjAuMjk3LCJtYXBfc2l6ZV9oX20iOjAuMjEsIm1hcF93Ijo0NDcxMzYsIm1hcF9zIjo3MDg4MywibWFwX2UiOjQ1Mzg1MSwibWFwX24iOjc1MzcwLCJ0YXJnZXRfc2NhbGUiOjI1MDAwLCJuYXNsb3YxIjoiS2FydGEgemEgb3JpZW50YWNpam8iLCJuYXNsb3YyIjoiIiwiZG9kYXRubyI6Ikl6ZGVsYWwgUkrFoCB6YSBwb3RyZWJlIG9yaWVudGFjaWplLiBLYXJ0YSBuaSBiaWxhIHJlYW1idWxpcmFuYS4iLCJlcHNnIjoiRVBTRzozNzk0IiwiZWRnZV93Z3M4NCI6dHJ1ZSwic2xpa2FsIjoiIiwic2xpa2FkIjoiIiwicmFzdGVyX2ZvbGRlciI6IkM6XFxVc2Vyc1xcTGVuYXJ0XFxEZXNrdG9wXFxEVEs1MFxccmVzIiwib3V0cHV0X2ZpbGUiOiJDOlxcVXNlcnNcXExlbmFydFxcQXBwRGF0YVxcTG9jYWxcXFRlbXAvdG9wb2R0ay04MjU4NGE5NTEzOTgzYzA1M2ViNGZkMjg3ZWIzNzA5NS5wZGYifQ==')
     
+
     configuration = json.loads(base64.b64decode(sys.argv[1]).decode('utf-8'))
     create_map(configuration)
 

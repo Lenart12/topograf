@@ -5,6 +5,12 @@
 	import proj4 from 'proj4';
 	import * as dtk50 from '$lib/dtk50_borders';
 
+	import L_marker_icon from 'leaflet/dist/images/marker-icon.png';
+	import L_marker_icon_2x from 'leaflet/dist/images/marker-icon-2x.png';
+	import L_marker_shadow from 'leaflet/dist/images/marker-shadow.png';
+	import L_layers from 'leaflet/dist/images/layers.png';
+	import L_layers_2x from 'leaflet/dist/images/layers-2x.png';
+
 	export let map_center_e: number;
 	export let map_center_n: number;
 	let _map_center_e: number;
@@ -161,6 +167,14 @@
 
 <main>
 	<div bind:this={map_html}></div>
+	<div hidden>
+		<!-- Preload leaflet images -->
+		<img src={L_marker_icon} alt="" />
+		<img src={L_marker_icon_2x} alt="" />
+		<img src={L_marker_shadow} alt="" />
+		<img src={L_layers} alt="" />
+		<img src={L_layers_2x} alt="" />
+	</div>
 </main>
 
 <style>

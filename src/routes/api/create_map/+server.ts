@@ -83,7 +83,9 @@ async function validate_request(fd: FormData) {
   validated.epsg = fd.get('epsg') as string;
   if (!/^EPSG:\d+$|^Brez$/.test(validated.epsg)) throw new Error('Koordinatni sistem je napačen (EPSG:xxxx ali Brez)');
   validated.edge_wgs84 = fd.get('edge_wgs84') === 'true';
-  validated.raster_folder = DTK50_FOLDER;
+  if (fd.get('raster_layer') === 'dtk50') validated.raster_folder = DTK50_FOLDER;
+  else if (fd.get('raster_layer') === '') validated.raster_folder = '';
+  else throw new Error('Napačen raster sloj');
   validated.temp_folder = TEMP_FOLDER;
 
   try {
@@ -112,17 +114,26 @@ export async function POST(event) {
   try {
     validated = await validate_request(await request.formData());
   } catch (error) {
-    return new Response(`${error}`, { status: 400 });
+    let error_message = '';
+    if (error instanceof Error) error_message = error.message;
+    else error_message = `${error}`;
+    return new Response(error_message, { status: 400 });
   }
 
   validated.map_id = get_map_id(validated);
 
   console.log(`Request for map ID: ${validated.map_id}`);
+  const maps_folder = `${TEMP_FOLDER}/maps`;
 
-  if (!fs.existsSync(`${TEMP_FOLDER}/maps`)) await fs.promises.mkdir(`${TEMP_FOLDER}/maps`);
+  if (!fs.existsSync(maps_folder)) await fs.promises.mkdir(maps_folder);
 
-  if (!fs.existsSync(`${TEMP_FOLDER}/maps/${validated.map_id}`) && await limiter.isLimited(event))
-    return new Response("Preveč zahtev", { status: 429 });
+  if (fs.existsSync(`${maps_folder}/${validated.map_id}`)) {
+    console.log(`Using cached map`);
+    return new Response(validated.map_id);
+  }
+
+  if (await limiter.isLimited(event))
+    return new Response("Preveč zahtev na strežnik. Poskusi kasneje!", { status: 429 });
 
   const pythonCommand = getPythonCommand(`${CREATE_MAP_PY_FOLDER}/.venv`);
   const scriptPath = `${CREATE_MAP_PY_FOLDER}/create_map.py`;
@@ -131,13 +142,11 @@ export async function POST(event) {
 
   try {
     const { stdout, stderr } = await aexec(command);
-    console.log(stdout);
-    console.error(stderr);
-    const fn = `${TEMP_FOLDER}/maps/${validated.map_id}/map.pdf`;
-    const pdf = await fs.promises.readFile(fn);
-    return new Response(pdf, { headers: { 'Content-Type': 'application/pdf' } });
+    if (stdout) console.log(stdout);
+    if (stderr) console.error(stderr);
+    return new Response(validated.map_id);
   } catch (error) {
-    console.error(`Error: ${error}`);
+    console.error(error);
     return new Response("Interna napaka pri ustvarjanju karte", { status: 500 });
   } finally {
     if (validated.slikal && fs.existsSync(validated.slikal)) await fs.promises.unlink(validated.slikal);

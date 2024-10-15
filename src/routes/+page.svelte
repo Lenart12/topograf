@@ -3,6 +3,7 @@
 	// import { onMount } from 'svelte';
 
 	import CoordSelector from '$lib/CoordSelector.svelte';
+	import { Accordion, AccordionItem } from '@skeletonlabs/skeleton';
 
 	// Konfiguracija
 	let velikost: 'a4' | 'a3' = 'a4';
@@ -29,6 +30,7 @@
 	let edge_wgs84: boolean = true;
 	let slikal: FileList;
 	let slikad: FileList;
+	let raster_layer: 'dtk50' | '' = 'dtk50';
 
 	let download_link: HTMLElement;
 
@@ -49,12 +51,9 @@
 		fd.append('edge_wgs84', edge_wgs84.toString());
 		fd.append('slikal', slikal ? slikal[0] : '');
 		fd.append('slikad', slikad ? slikad[0] : '');
+		fd.append('raster_layer', raster_layer);
 
 		get_map_promise = (async () => {
-			const firstChild = download_link.firstChild;
-			if (firstChild instanceof HTMLAnchorElement && firstChild.href) {
-				URL.revokeObjectURL(firstChild.href);
-			}
 			download_link.innerHTML = '';
 			const request = fetch('/api/create_map', {
 				method: 'POST',
@@ -63,25 +62,15 @@
 
 			const response = await request;
 			if (!response.ok) {
-				if (response.status === 400) {
-					const text = await response.text();
-					throw new Error(text);
-				} else {
-					throw new Error(`${response.status} ${response.statusText}`);
-				}
+				const text = await response.text();
+				throw new Error(text);
 			}
 
-			const blob = await response.blob();
-			const url = URL.createObjectURL(blob);
-			const a = document.createElement('a');
-			a.className = 'btn variant-filled-primary';
-			a.innerText = 'Če se prenos ne začne samodejno, klikni tukaj.';
-			a.href = url;
-			a.target = '_blank';
-			naslov1 = naslov1 || 'Topografska karta';
-			a.download = `${naslov1.replace(/ /g, '_')}-${new Date().toLocaleDateString()}.pdf`;
-			download_link.appendChild(a);
-			a.click();
+			const map_id = await response.text();
+			window.open(`/maps/${map_id}`, '_blank');
+
+			download_link.innerHTML = `<a class="btn variant-filled-primary" href="/maps/${map_id}" target="_blank">Odpri karto</a>`;
+
 			return 'Karta je bila uspešno ustvarjena.';
 		})();
 	}
@@ -94,7 +83,7 @@
 				<h1 class="h1">Ustvari svojo karto</h1>
 			</div>
 
-			<div class="flex flex-row gap-8 flex-wrap">
+			<div class="flex flex-row gap-8 flex-wrap px-4">
 				<div>
 					<h3 class="h3">Velikost</h3>
 					<div class="btn-group variant-soft">
@@ -129,8 +118,8 @@
 				</div>
 			</div>
 
-			<p class="lead mt-8">Klikni na zemljevid ali premakni ročico željene karte.</p>
-			<p class="lead">
+			<p class="lead mt-8 px-4">Klikni na zemljevid ali premakni ročico željene karte.</p>
+			<p class="lead px-4">
 				Sredina karte (WGS84): lat=<input
 					class="input inline-block w-auto"
 					type="number"
@@ -145,12 +134,12 @@
 				/>
 			</p>
 			{#if map_e && map_n && map_s && map_w}
-				<p class="lead">
+				<p class="lead px-4">
 					Trenutni izrez (D96/TM): e<sub>min</sub>={map_w} n<sub>min</sub>={map_s}, e<sub>max</sub
 					>={map_e}, n<sub>max</sub>={map_n}
 				</p>
 			{/if}
-			<div class="p-8">
+			<div class="px-4 mt-2">
 				<CoordSelector
 					bind:map_center_e
 					bind:map_center_n
@@ -182,47 +171,6 @@
 				</div>
 
 				<div>
-					<label for="epsg">Koordinatni sistem</label>
-					<div class="btn-group variant-soft flex-wrap items-stretch">
-						<input hidden type="radio" id="epsg_d96_tm" bind:group={epsg} value="EPSG:3794" />
-						<label for="epsg_d96_tm" class="p-2" class:variant-filled-primary={epsg == 'EPSG:3794'}
-							>D96/TM (EPSG:3794)</label
-						>
-						<input hidden type="radio" id="epsg_d48_gk" bind:group={epsg} value="EPSG:3912" />
-						<label for="epsg_d48_gk" class="p-2" class:variant-filled-primary={epsg == 'EPSG:3912'}
-							>D48/GK (EPSG:3912)</label
-						>
-						<input
-							hidden
-							type="radio"
-							id="epsg_slovenia_1996"
-							bind:group={epsg}
-							value="EPSG:8687"
-						/>
-						<label
-							for="epsg_slovenia_1996"
-							class="p-2"
-							class:variant-filled-primary={epsg == 'EPSG:8687'}
-							>Slovenia 1996/ UTM zone 33N (EPSG:8687)</label
-						>
-						<input hidden type="radio" id="epsg_wgs_84" bind:group={epsg} value="EPSG:32633" />
-						<label for="epsg_wgs_84" class="p-2" class:variant-filled-primary={epsg == 'EPSG:32633'}
-							>WGS 84/ UTM zone 33N (EPSG:32633)</label
-						>
-						<input hidden type="radio" id="epsg_brez" bind:group={epsg} value="" />
-						<label for="epsg_brez" class="p-2" class:variant-filled-primary={epsg == ''}>Brez</label
-						>
-					</div>
-				</div>
-
-				<div>
-					<label class="flex items-center space-x-2">
-						<input class="checkbox" type="checkbox" bind:checked={edge_wgs84} />
-						<p>WGS84 koordinatni sistem na robu</p>
-					</label>
-				</div>
-
-				<div>
 					<label for="slikal">Slika levo</label>
 					<input
 						class="input"
@@ -243,6 +191,109 @@
 						bind:files={slikad}
 					/>
 				</div>
+
+				<Accordion regionControl="variant-soft" regionPanel="variant-soft">
+					<AccordionItem>
+						<svelte:fragment slot="summary">
+							<h3 class="h3">Napredne nastavitve</h3>
+						</svelte:fragment>
+						<svelte:fragment slot="content">
+							<div class="space-y-2">
+								<h3 class="h3">Koordinatni sistemi</h3>
+								<div>
+									<label for="epsg">Koordinatni sistem</label>
+									<div class="btn-group variant-soft flex-wrap items-stretch">
+										<input
+											hidden
+											type="radio"
+											id="epsg_d96_tm"
+											bind:group={epsg}
+											value="EPSG:3794"
+										/>
+										<label
+											for="epsg_d96_tm"
+											class="p-2"
+											class:variant-filled-primary={epsg == 'EPSG:3794'}>D96/TM (EPSG:3794)</label
+										>
+										<input
+											hidden
+											type="radio"
+											id="epsg_d48_gk"
+											bind:group={epsg}
+											value="EPSG:3912"
+										/>
+										<label
+											for="epsg_d48_gk"
+											class="p-2"
+											class:variant-filled-primary={epsg == 'EPSG:3912'}>D48/GK (EPSG:3912)</label
+										>
+										<input
+											hidden
+											type="radio"
+											id="epsg_slovenia_1996"
+											bind:group={epsg}
+											value="EPSG:8687"
+										/>
+										<label
+											for="epsg_slovenia_1996"
+											class="p-2"
+											class:variant-filled-primary={epsg == 'EPSG:8687'}
+											>Slovenia 1996/ UTM zone 33N (EPSG:8687)</label
+										>
+										<input
+											hidden
+											type="radio"
+											id="epsg_wgs_84"
+											bind:group={epsg}
+											value="EPSG:32633"
+										/>
+										<label
+											for="epsg_wgs_84"
+											class="p-2"
+											class:variant-filled-primary={epsg == 'EPSG:32633'}
+											>WGS 84/ UTM zone 33N (EPSG:32633)</label
+										>
+										<input hidden type="radio" id="epsg_brez" bind:group={epsg} value="Brez" />
+										<label for="epsg_brez" class="p-2" class:variant-filled-primary={epsg == 'Brez'}
+											>Brez</label
+										>
+									</div>
+								</div>
+
+								<div>
+									<label class="flex items-center space-x-2">
+										<input class="checkbox" type="checkbox" bind:checked={edge_wgs84} />
+										<p>WGS84 koordinatni sistem na robu</p>
+									</label>
+								</div>
+								<label for="raster_layer">
+									<h3 class="h3">Rasterski sloj</h3>
+								</label>
+								<div class="btn-group variant-soft flex-wrap items-stretch">
+									<input
+										hidden
+										type="radio"
+										id="raster_dtk50"
+										bind:group={raster_layer}
+										value="dtk50"
+									/>
+									<label
+										for="raster_dtk50"
+										class="p-2"
+										class:variant-filled-primary={raster_layer == 'dtk50'}>DTK50 (2014-2023)</label
+									>
+
+									<input hidden type="radio" id="raster_brez" bind:group={raster_layer} value="" />
+									<label
+										for="raster_brez"
+										class="p-2"
+										class:variant-filled-primary={raster_layer == ''}>Brez</label
+									>
+								</div>
+							</div>
+						</svelte:fragment>
+					</AccordionItem>
+				</Accordion>
 
 				{#if inside_border === false}
 					<div class="variant-filled-error text-center">
