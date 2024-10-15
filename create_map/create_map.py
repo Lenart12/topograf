@@ -14,6 +14,9 @@ import json
 import base64
 import os
 import tempfile
+import hashlib
+import numpy as np
+import logging
 
 ### STATIC CONFIGURATION ###
 
@@ -22,51 +25,84 @@ GRID_MARGIN_M = [0.011, 0.0141, 0.0195, 0.0143] # Margin around the A4 paper in 
 
 ### /STATIC CONFIGURATION ###
 
-def get_raster_map_bounds(dtk50_folder: str):
+# Setup logging
+logger = logging.getLogger('create_map')
+logger.setLevel(logging.DEBUG)
+
+TEMP_DIR = os.path.join(tempfile.gettempdir(), '.create_map_cache')
+def get_cache_dir(folder: str = ''):
+    cache_dir = TEMP_DIR
+    if not os.path.exists(cache_dir):
+        os.makedirs(cache_dir)
+
+    if folder:
+        cache_dir = os.path.join(cache_dir, folder)
+        if not os.path.exists(cache_dir):
+            os.makedirs(cache_dir)
+
+    return cache_dir
+
+def get_cache_index(o: dict):
+    return hashlib.md5(json.dumps(o, sort_keys=True).encode('utf-8')).hexdigest()
+
+def get_raster_map_bounds(raster_folder: str):
     """
     Returns the bounds of the rasters inside the folder as a dictionary with the filename as the key.
 
     Parameters
     ----------
-    dtk50_folder : str
+    raster_folder : str
         The folder containing the raster files.
     """
-    bounds_cache = os.path.join(tempfile.gettempdir(), 'dtk50-bounds-cache.json')
-    if os.path.exists(bounds_cache):
-        with open(bounds_cache, 'r') as f:
-            return json.load(f)
+    folder_hash = get_cache_index({'raster_folder': os.path.abspath(raster_folder)})
+    bounds_cache_fn = os.path.join(get_cache_dir(), f'{folder_hash}-bounds-cache.json')
 
-    raster_files = [f for f in os.listdir(dtk50_folder) if f.endswith(".tif")]
+    if os.path.exists(bounds_cache_fn):
+        with open(bounds_cache_fn, 'r') as f:
+            bounds = json.load(f)
+            logger.info(f'Using cached raster bounds. - ({folder_hash})')
+            return bounds
+
+    raster_files = [f for f in os.listdir(raster_folder) if f.endswith(".tif")]
     bounds = {}
     for filename in raster_files:
-        fp = os.path.join(dtk50_folder, filename)
+        fp = os.path.join(raster_folder, filename)
         with rasterio.open(fp) as src:
             bounds[filename] = [*src.bounds]
 
-    with open(bounds_cache, 'w') as f:
+    with open(bounds_cache_fn, 'w') as f:
         json.dump(bounds, f)
 
+    logger.info(f'Discovered raster bounds. - ({folder_hash})')
     return bounds
 
-def get_raster_map(dtk50_folder: str, bounds: tuple[float]):
+def get_raster_map(raster_folder: str, bounds: tuple[float]):
     """
     Merges all the raster files in the folder that intersect with the given bounds.
 
     Parameters
     ----------
-    dtk50_folder : str
+    raster_folder : str
         The folder containing the raster files.
     bounds : tuple (west, south, east, north)
         The bounds of the area to be merged. EPSG:3794
     """
 
-    dtk50_bounds = get_raster_map_bounds(dtk50_folder)
+    bounds_hash = get_cache_index({'raster_folder': os.path.abspath(raster_folder), 'bounds': bounds})
+    raster_cache_fn = os.path.join(get_cache_dir('raster'), f'{bounds_hash}.npy')
+
+    if os.path.exists(raster_cache_fn):
+        mosaic = np.load(raster_cache_fn)
+        logger.info(f'Using cached raster mosaic. - ({bounds_hash} - {mosaic.shape})')
+        return mosaic
+
+    raster_bounds = get_raster_map_bounds(raster_folder)
     selected_files = []
     bbox = shapely.geometry.box(*bounds)
-    for filename, file_bounds in dtk50_bounds.items():
+    for filename, file_bounds in raster_bounds.items():
         file_bbox = shapely.geometry.box(*file_bounds)
         if bbox.intersects(file_bbox):
-            selected_files.append(os.path.join(dtk50_folder, filename))
+            selected_files.append(os.path.join(raster_folder, filename))
 
     if len(selected_files) == 0:
         raise ValueError('No raster files intersect with the given bounds.')
@@ -80,9 +116,13 @@ def get_raster_map(dtk50_folder: str, bounds: tuple[float]):
         src_files_to_mosaic.append(src)
     
     mosaic, _ = rasterio.merge.merge(src_files_to_mosaic, bounds=bounds)
+
+    np.save(raster_cache_fn, mosaic)
+
+    logger.info(f'Created raster mosaic. - ({bounds_hash} - {mosaic.shape})')
     return mosaic
 
-def get_grid_and_map(map_size_m: tuple[float], map_bounds: tuple[float], dtk50_folder: str):
+def get_grid_and_map(map_size_m: tuple[float], map_bounds: tuple[float], raster_folder: str):
     """
     Returns the map image, the grid image, and the transformers for converting between the map and the world.
 
@@ -92,7 +132,7 @@ def get_grid_and_map(map_size_m: tuple[float], map_bounds: tuple[float], dtk50_f
         The size of the map in meters.
     map_bounds : tuple (west, south, east, north)
         The bounds of the map in EPSG:3794.
-    dtk50_folder : str
+    raster_folder : str
         The folder containing the raster files.
     """
     # Convert from meters to pixels
@@ -110,7 +150,7 @@ def get_grid_and_map(map_size_m: tuple[float], map_bounds: tuple[float], dtk50_f
     map_img = Image.new('RGB', map_size_px, 0xFFFFFF)
 
     # Get the raster map
-    grid_raster = get_raster_map(dtk50_folder, map_bounds)
+    grid_raster = get_raster_map(raster_folder, map_bounds)
     grid_margin_px = [int(m * target_pxpm) for m in GRID_MARGIN_M]
     grid_size_px = [map_size_px[0] - grid_margin_px[1] - grid_margin_px[3], map_size_px[1] - grid_margin_px[0] - grid_margin_px[2]]
     grid_img = Image.fromarray(rasterio.plot.reshape_as_image(grid_raster), 'RGB').resize(grid_size_px)
@@ -132,6 +172,8 @@ def get_grid_and_map(map_size_m: tuple[float], map_bounds: tuple[float], dtk50_f
     def map_to_grid(x, y):
         return (x - map_to_grid_offset[0], y - map_to_grid_offset[1])
     
+    logger.info(f'Created map and grid images. ({map_size_px} - {map_bounds})')
+    
     return map_img, grid_img, add_colrow_to_transformer(map_to_world_tr), add_colrow_to_transformer(grid_to_world_tr), add_colrow_to_transformer(real_to_map_tr), map_to_grid
 
 
@@ -139,9 +181,11 @@ def draw_grid(map_img, grid_img, map_to_world_tr, grid_to_world_tr, real_to_map_
     map_draw = ImageDraw.Draw(map_img)
     
     # Draw grid on the map
+    logger.info('Drawing grid.')
     map_img.paste(grid_img, real_to_map_tr.colrow(GRID_MARGIN_M[3], GRID_MARGIN_M[0]))
 
     # Draw grid border
+    logger.info('Drawing grid border.')
     border0 = map_to_world_tr.colrow(*grid_to_world_tr.xy(-1, -1))
     grid_border = (border0[0], border0[1], border0[0] + grid_img.size[0] + 1, border0[1] + grid_img.size[1] + 1)
     map_draw.rectangle(grid_border, outline='black', width=2)
@@ -155,6 +199,8 @@ def draw_grid(map_img, grid_img, map_to_world_tr, grid_to_world_tr, real_to_map_
         cs_to = pyproj.CRS.from_epsg(int(epsg.split(':')[1]))
         cs_from_to_tr = pyproj.Transformer.from_crs(cs_from, cs_to)
         cs_to_from_tr = pyproj.Transformer.from_crs(cs_to, cs_from)
+
+        logger.info(f'Drawing coordinate system. - ({cs_to.name})')
 
         if not cs_to.is_projected:
             raise ValueError('The target coordinate system must be projected.')
@@ -244,9 +290,12 @@ def draw_grid(map_img, grid_img, map_to_world_tr, grid_to_world_tr, real_to_map_
             map_draw.text((yline_e[0] + 5, yline_e[1]), txt, fill='black', align='center', anchor='lm', font=grid_font)
 
         border_bottom_px = grid_font.getbbox('⁸88')[3] + 5
-        
+    else:
+        logger.info('Skipping coordinate system drawing.')
+    
     # Draw the edge of the map in WGS84
     if edge_wgs84:
+        logger.info('Drawing WGS84 edge.')
         # Outer edge
         border_margins = [px*1.1 for px in grid_font.getbbox('⁸88')][2:]
         wgs_border = (grid_border[0] - border_margins[0], grid_border[1] - border_margins[1], grid_border[2] + border_margins[0], grid_border[3] + border_margins[1])
@@ -332,6 +381,7 @@ def draw_grid(map_img, grid_img, map_to_world_tr, grid_to_world_tr, real_to_map_
 
         return real_to_map_tr.xy(0, wgs_border[3])[0]
     else:
+        logger.info('Skipping WGS84 edge drawing.')
         return real_to_map_tr.xy(0, grid_border[3] + border_bottom_px)[0]
 
 def draw_markings(map_img, bbox, naslov1, naslov2, dodatno, slikal, slikad, epsg, edge_wgs84, target_scale, real_to_map_tr):
@@ -343,6 +393,7 @@ def draw_markings(map_img, bbox, naslov1, naslov2, dodatno, slikal, slikad, epsg
 
 
     # Draw the title
+    logger.info(f'Drawing title. {naslov1} {naslov2}')
     title_w = 0
 
     if naslov1 and naslov2:
@@ -369,6 +420,7 @@ def draw_markings(map_img, bbox, naslov1, naslov2, dodatno, slikal, slikad, epsg
     bbox_size = real_to_map_tr.colrow(bbox[2] - bbox[0], bbox[3] - bbox[1])
 
     if slikal:
+        logger.info(f'Drawing left logo: {slikal}')
         logo_l = Image.open(slikal)
         logo_l.thumbnail((bbox_size[1] * logo_scale, bbox_size[1] * logo_scale))
         logo_p0 = (
@@ -378,6 +430,7 @@ def draw_markings(map_img, bbox, naslov1, naslov2, dodatno, slikal, slikad, epsg
         map_img.paste(logo_l, logo_p0, logo_l)
 
     if slikad:
+        logger.info(f'Drawing right logo: {slikad}')
         logo_d = Image.open(slikad)
         logo_d.thumbnail((bbox_size[1] * logo_scale, bbox_size[1] * logo_scale))
         logo_p0 = (
@@ -396,6 +449,8 @@ def draw_markings(map_img, bbox, naslov1, naslov2, dodatno, slikal, slikad, epsg
 
     if scale_size is None:
         scale_size = scale_max_size * target_scale
+
+    logger.info(f'Drawing scale. ({scale_size}m)')
 
     # Scale position
     scale_height = scale_font.getbbox('0')[3]
@@ -424,6 +479,7 @@ def draw_markings(map_img, bbox, naslov1, naslov2, dodatno, slikal, slikad, epsg
         map_draw.line((*scale_line_p, scale_line_p[0], scale_line_p[1] - i_scale_height), fill='black', width=2)
 
     # Map info
+    logger.info('Drawing map info.')
     def get_coord_system_name():
         if epsg == 'Brez':
             if edge_wgs84:
@@ -472,24 +528,51 @@ def draw_markings(map_img, bbox, naslov1, naslov2, dodatno, slikal, slikad, epsg
         
 def create_map(configuration):
     # Unpack the configuration
+    # Map index
+    map_id = configuration['map_id']
+
+    # Map size
     map_size_w_m = configuration['map_size_w_m']
     map_size_h_m = configuration['map_size_h_m']
+
+    # Map bounds
     map_w = configuration['map_w']
     map_s = configuration['map_s']
     map_e = configuration['map_e']
     map_n = configuration['map_n']
+
+    # Grid configuration
     target_scale = configuration['target_scale']
+    epsg = configuration['epsg']
+    edge_wgs84 = configuration['edge_wgs84']
+
+    # Markings
     naslov1 = configuration['naslov1']
     naslov2 = configuration['naslov2']
     dodatno = configuration['dodatno']
-    epsg = configuration['epsg']
-    edge_wgs84 = configuration['edge_wgs84']
     slikal = configuration['slikal']
     slikad = configuration['slikad']
-    dtk50_folder = configuration['dtk50_folder']
-    output_file = configuration['output_file']
 
-    map_img, grid_img, map_to_world_tr, grid_to_world_tr, real_to_map_tr, map_to_grid = get_grid_and_map((map_size_w_m, map_size_h_m), (map_w, map_s, map_e, map_n), dtk50_folder)
+    # Raster layer
+    raster_folder = configuration['raster_folder']
+
+    # Temp folder
+    if 'temp_folder' in configuration:
+        global TEMP_DIR
+        TEMP_DIR = configuration['temp_folder']
+
+    output_file = os.path.join(get_cache_dir(f'maps/{map_id}'), 'map.pdf')
+    output_conf = os.path.join(get_cache_dir(f'maps/{map_id}'), 'conf.json')
+
+    logger.info(f'Creating map: {map_id}')
+
+    if os.path.exists(output_file):
+        logger.info(f'Map exists (nothing to do). - ({output_file})')
+        return
+    
+    os.makedirs(os.path.dirname(output_file), exist_ok=True)
+
+    map_img, grid_img, map_to_world_tr, grid_to_world_tr, real_to_map_tr, map_to_grid = get_grid_and_map((map_size_w_m, map_size_h_m), (map_w, map_s, map_e, map_n), raster_folder)
     
     border_bottom = draw_grid(map_img, grid_img, map_to_world_tr, grid_to_world_tr, real_to_map_tr, epsg, edge_wgs84, map_to_grid)
 
@@ -502,14 +585,30 @@ def create_map(configuration):
 
     draw_markings(map_img, markings_bbox, naslov1, naslov2, dodatno, slikal, slikad, epsg, edge_wgs84, target_scale, real_to_map_tr)
 
+    logger.info(f'Saving map to: {output_file}')
     map_img.save(output_file, dpi=(TARGET_DPI, TARGET_DPI))
 
-if __name__ == '__main__':
+    configuration.pop('temp_folder')
+    configuration['raster_folder'] = os.path.basename(os.path.dirname(raster_folder))
+    configuration['slikal'] = os.path.basename(slikal) if slikal else None
+    configuration['slikad'] = os.path.basename(slikad) if slikad else None
+    with open(output_conf, 'w') as f:
+        json.dump(configuration, f)
+
+
+def main():
+    logging.basicConfig(level=logging.INFO, stream=sys.stdout)
     if len(sys.argv) != 2:
-        print('Usage: python create_map.py <base64_configuration>')
-        exit(1)
+        logger.error('Usage: python create_map.py <base64_configuration>')
+        # exit(1)
+        logger.warning('Using default configuration')
+        sys.argv.append('eyJtYXBfc2l6ZV93X20iOjAuMjk3LCJtYXBfc2l6ZV9oX20iOjAuMjEsIm1hcF93Ijo0NDcxMzYsIm1hcF9zIjo3MDg4MywibWFwX2UiOjQ1Mzg1MSwibWFwX24iOjc1MzcwLCJ0YXJnZXRfc2NhbGUiOjI1MDAwLCJuYXNsb3YxIjoiS2FydGEgemEgb3JpZW50YWNpam8iLCJuYXNsb3YyIjoiIiwiZG9kYXRubyI6Ikl6ZGVsYWwgUkrFoCB6YSBwb3RyZWJlIG9yaWVudGFjaWplLiBLYXJ0YSBuaSBiaWxhIHJlYW1idWxpcmFuYS4iLCJlcHNnIjoiRVBTRzozNzk0IiwiZWRnZV93Z3M4NCI6dHJ1ZSwic2xpa2FsIjoiIiwic2xpa2FkIjoiIiwicmFzdGVyX2ZvbGRlciI6IkM6XFxVc2Vyc1xcTGVuYXJ0XFxEZXNrdG9wXFxEVEs1MFxccmVzIiwib3V0cHV0X2ZpbGUiOiJDOlxcVXNlcnNcXExlbmFydFxcQXBwRGF0YVxcTG9jYWxcXFRlbXAvdG9wb2R0ay04MjU4NGE5NTEzOTgzYzA1M2ViNGZkMjg3ZWIzNzA5NS5wZGYifQ==')
+    
     configuration = json.loads(base64.b64decode(sys.argv[1]).decode('utf-8'))
     create_map(configuration)
+
+if __name__ == '__main__':
+    main()
     exit(0)
 
 raise NotImplementedError('This script is meant to be run as a standalone script.')

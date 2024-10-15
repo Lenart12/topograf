@@ -1,31 +1,38 @@
 import { platform } from 'os';
 import util from 'util';
 import { exec } from 'child_process';
-import { tmpdir } from 'os';
 import fs from 'node:fs';
-import { CREATE_MAP_PY_FOLDER, DTK50_FOLDER } from '$env/static/private';
+import { CREATE_MAP_PY_FOLDER, DTK50_FOLDER, TEMP_FOLDER } from '$env/static/private';
 const aexec = util.promisify(exec);
 import { RateLimiter } from 'sveltekit-rate-limiter/server';
+import crypto_js from 'crypto-js';
+const { MD5 } = crypto_js;
 
 const allowed_chars = /^[a-zA-Z0-9À-ž\-\.\,\! ]*$/;
 
 interface CreateMapRequest {
+  map_id: string;
+
   map_size_w_m: number;
   map_size_h_m: number;
+
   map_w: number;
   map_s: number;
   map_e: number;
   map_n: number;
+
   target_scale: number;
+  epsg: string;
+  edge_wgs84: boolean;
+
   naslov1: string;
   naslov2: string;
   dodatno: string;
-  epsg: string;
-  edge_wgs84: boolean;
   slikal: string;
   slikad: string;
-  dtk50_folder: string;
-  output_file: string;
+
+  raster_folder: string;
+  temp_folder: string;
 }
 
 async function validate_request_file(file: File | string | null) {
@@ -38,10 +45,17 @@ async function validate_request_file(file: File | string | null) {
   if (file.name.length > 100) throw new Error('Slika ima predolgo ime (max 100 znakov)');
   if (!allowed_chars.test(file.name)) throw new Error('Ime slike vsebuje nedovoljene znake');
 
-  const file_path = `${tmpdir()}/topodtk-${Array.from({ length: 32 }, () => Math.floor(Math.random() * 16).toString(16)).join('')}-${file.name}`;
-  const ab = Buffer.from(await file.arrayBuffer());
-  await fs.promises.writeFile(file_path, ab);
-  return file_path;
+  const ab = await file.arrayBuffer();
+  const hexdigest = MD5(crypto_js.lib.WordArray.create(ab)).toString();
+
+  const cache_dir = `${TEMP_FOLDER}/imgs`;
+  if (!fs.existsSync(cache_dir)) await fs.promises.mkdir(cache_dir);
+
+  const ext = file.type === 'image/jpeg' ? 'jpg' : 'png';
+  const fn = `${TEMP_FOLDER}/imgs/${hexdigest}.${ext}`;
+
+  await fs.promises.writeFile(fn, new Uint8Array(ab));
+  return fn;
 }
 
 async function validate_request(fd: FormData) {
@@ -69,6 +83,9 @@ async function validate_request(fd: FormData) {
   validated.epsg = fd.get('epsg') as string;
   if (!/^EPSG:\d+$|^Brez$/.test(validated.epsg)) throw new Error('Koordinatni sistem je napačen (EPSG:xxxx ali Brez)');
   validated.edge_wgs84 = fd.get('edge_wgs84') === 'true';
+  validated.raster_folder = DTK50_FOLDER;
+  validated.temp_folder = TEMP_FOLDER;
+
   try {
     validated.slikal = await validate_request_file(fd.get('slikal') as File | string | null);
     validated.slikad = await validate_request_file(fd.get('slikad') as File | string | null);
@@ -77,9 +94,11 @@ async function validate_request(fd: FormData) {
     if (validated.slikad) await fs.promises.unlink(validated.slikad);
     throw error;
   }
-  validated.dtk50_folder = DTK50_FOLDER;
-  validated.output_file = `${tmpdir()}/topodtk-${Array.from({ length: 32 }, () => Math.floor(Math.random() * 16).toString(16)).join('')}.pdf`;
   return validated;
+}
+
+function get_map_id(validated: CreateMapRequest) {
+  return MD5(JSON.stringify(validated), Object.keys(validated).sort()).toString();
 }
 
 const limiter = new RateLimiter({
@@ -89,16 +108,21 @@ const limiter = new RateLimiter({
 
 export async function POST(event) {
   const { request } = event;
-  if (await limiter.isLimited(event))
-    return new Response("Preveč zahtev", { status: 429 });
-
   let validated: CreateMapRequest;
   try {
     validated = await validate_request(await request.formData());
   } catch (error) {
     return new Response(`${error}`, { status: 400 });
   }
-  console.log(validated);
+
+  validated.map_id = get_map_id(validated);
+
+  console.log(`Request for map ID: ${validated.map_id}`);
+
+  if (!fs.existsSync(`${TEMP_FOLDER}/maps`)) await fs.promises.mkdir(`${TEMP_FOLDER}/maps`);
+
+  if (!fs.existsSync(`${TEMP_FOLDER}/maps/${validated.map_id}`) && await limiter.isLimited(event))
+    return new Response("Preveč zahtev", { status: 429 });
 
   const pythonCommand = getPythonCommand(`${CREATE_MAP_PY_FOLDER}/.venv`);
   const scriptPath = `${CREATE_MAP_PY_FOLDER}/create_map.py`;
@@ -107,17 +131,17 @@ export async function POST(event) {
 
   try {
     const { stdout, stderr } = await aexec(command);
-    console.log(`Output: ${stdout}`);
-    console.error(`Error: ${stderr}`);
-    const pdf = await fs.promises.readFile(validated.output_file);
-    // await fs.promises.unlink(validated.output_file);
+    console.log(stdout);
+    console.error(stderr);
+    const fn = `${TEMP_FOLDER}/maps/${validated.map_id}/map.pdf`;
+    const pdf = await fs.promises.readFile(fn);
     return new Response(pdf, { headers: { 'Content-Type': 'application/pdf' } });
   } catch (error) {
     console.error(`Error: ${error}`);
     return new Response("Interna napaka pri ustvarjanju karte", { status: 500 });
   } finally {
-    if (validated.slikal) await fs.promises.unlink(validated.slikal);
-    if (validated.slikad) await fs.promises.unlink(validated.slikad);
+    if (validated.slikal && fs.existsSync(validated.slikal)) await fs.promises.unlink(validated.slikal);
+    if (validated.slikad && fs.existsSync(validated.slikad)) await fs.promises.unlink(validated.slikad);
   }
 }
 
