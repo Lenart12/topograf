@@ -78,26 +78,28 @@
 </script>
 
 <main>
-	<div class="container mx-auto p-8">
-		<div class="card inline-block w-full p-8">
-			<div class="card-header my-4">
+	<div class="container mx-auto p-0 md:p-8">
+		<div class="card inline-block w-full px-0 pb-4 md:p-8">
+			<div class="card-header">
 				<h1 class="h1">Ustvari svojo karto</h1>
 			</div>
 
-			<p class="lead mt-8 px-4">Klikni na zemljevid ali premakni ročico željene karte.</p>
-			<div class="px-4 mt-2">
-				<CoordSelector
-					bind:map_center_e
-					bind:map_center_n
-					bind:map_size_w_m
-					bind:map_size_h_m
-					bind:target_scale
-					bind:map_e
-					bind:map_n
-					bind:map_s
-					bind:map_w
-					bind:inside_border
-				/>
+			<div class="px-4">
+				<p class="lead">Klikni na zemljevid ali premakni ročico željene karte.</p>
+				<div class="mt-2">
+					<CoordSelector
+						bind:map_center_e
+						bind:map_center_n
+						bind:map_size_w_m
+						bind:map_size_h_m
+						bind:target_scale
+						bind:map_e
+						bind:map_n
+						bind:map_s
+						bind:map_w
+						bind:inside_border
+					/>
+				</div>
 			</div>
 
 			<div class="p-4">

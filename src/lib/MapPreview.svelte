@@ -64,13 +64,11 @@
 		})();
 	}
 
-	let map_options: GetMapOptions = (L) => {
-		return {
-			crs: L.CRS.Simple,
-			minZoom: -5,
-			maxZoom: 1
-		};
-	};
+	let map_options: GetMapOptions = (L) => ({
+		crs: L.CRS.Simple,
+		minZoom: -5,
+		maxZoom: 1
+	});
 
 	const on_map_ready = async () => {
 		L.marker([0, 0], {
