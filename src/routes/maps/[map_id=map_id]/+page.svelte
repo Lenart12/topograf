@@ -57,25 +57,30 @@
 	<div class="container mx-auto p-0 md:p-8">
 		<div class="card inline-block w-full p-0 md:p-8">
 			<div class="card-header">
-				<h1 class="h1">{title}</h1>
+				<h1 class="h1"><iconify-icon icon="material-symbols:map"></iconify-icon> {title}</h1>
 				<h2 class="h2">{data.map_config.naslov2}</h2>
 			</div>
 
 			<div class="flex flex-row gap-8 flex-wrap px-4">
 				<div>
 					<a class="btn variant-filled-primary" bind:this={download_button} href="#invalid"
-						>Prenesi karto</a
+						>Prenesi <iconify-icon icon="material-symbols:download-2"></iconify-icon></a
 					>
 				</div>
-				<div class="flex flex-wrap gap-2">
-					{#each map_properties as [prop, label, format]}
-						{#if data.map_config[prop]}
-							<div>
-								<strong>{label}:</strong>
-								{format(data.map_config[prop])}
-							</div>
-						{/if}
-					{/each}
+				<div>
+					<h3 class="h3">
+						Podatki <iconify-icon icon="mdi:information-slab-box-outline"></iconify-icon>
+					</h3>
+					<div class="flex flex-wrap gap-2">
+						{#each map_properties as [prop, label, format]}
+							{#if data.map_config[prop]}
+								<div>
+									<strong>{label}:</strong>
+									{format(data.map_config[prop])}
+								</div>
+							{/if}
+						{/each}
+					</div>
 					<object
 						bind:this={pdf_viewer}
 						width="100%"

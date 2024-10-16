@@ -68,7 +68,7 @@
 			const map_id = await response.text();
 			window.open(`/maps/${map_id}`, '_blank');
 
-			download_link.innerHTML = `<a class="btn variant-filled-primary" href="/maps/${map_id}" target="_blank">Odpri karto</a>`;
+			download_link.innerHTML = `<a class="btn variant-filled-primary" href="/maps/${map_id}" target="_blank">Odpri karto <iconify-icon icon="mdi:map-search"></iconify-icon></a>`;
 
 			return 'Karta je bila uspešno ustvarjena.';
 		})();
@@ -114,7 +114,9 @@
 				<Accordion regionControl="variant-soft" regionPanel="variant-soft">
 					<AccordionItem bind:open={navodila_open}>
 						<svelte:fragment slot="summary">
-							<h3 class="h3">Navodila</h3>
+							<h3 class="h3">
+								Navodila <iconify-icon icon="material-symbols:help"></iconify-icon>
+							</h3>
 							(Klikni tu za {!navodila_open ? 'razširitev' : 'skritje'})
 						</svelte:fragment>
 						<svelte:fragment slot="content">
@@ -171,7 +173,9 @@
 				<Accordion regionControl="variant-soft" regionPanel="variant-soft">
 					<AccordionItem open>
 						<svelte:fragment slot="summary">
-							<h3 class="h3">Postavitev</h3>
+							<h3 class="h3">
+								Postavitev <iconify-icon icon="material-symbols:resize"></iconify-icon>
+							</h3>
 						</svelte:fragment>
 						<svelte:fragment slot="content">
 							<div class="flex flex-row gap-8 flex-wrap">
@@ -206,7 +210,9 @@
 										<label
 											for="postavitev_l"
 											class="p-2"
-											class:variant-filled-primary={postavitev == 'l'}>Ležeče</label
+											class:variant-filled-primary={postavitev == 'l'}
+											><iconify-icon icon="material-symbols:crop-landscape-outline-sharp"
+											></iconify-icon></label
 										>
 										<input
 											hidden
@@ -218,7 +224,9 @@
 										<label
 											for="postavitev_p"
 											class="p-2"
-											class:variant-filled-primary={postavitev == 'p'}>Pokončno</label
+											class:variant-filled-primary={postavitev == 'p'}
+											><iconify-icon icon="material-symbols:crop-portrait-outline-sharp"
+											></iconify-icon></label
 										>
 									</div>
 								</div>
@@ -253,7 +261,9 @@
 					</AccordionItem>
 					<AccordionItem open>
 						<svelte:fragment slot="summary">
-							<h3 class="h3">Označbe</h3>
+							<h3 class="h3">
+								Označbe <iconify-icon icon="material-symbols:text-ad-sharp"></iconify-icon>
+							</h3>
 						</svelte:fragment>
 						<svelte:fragment slot="content">
 							<h4 class="h4">Naslovi</h4>
@@ -334,7 +344,10 @@
 					</AccordionItem>
 					<AccordionItem>
 						<svelte:fragment slot="summary">
-							<h3 class="h3">Napredne nastavitve</h3>
+							<h3 class="h3">
+								Napredne nastavitve <iconify-icon icon="material-symbols:settings-outline"
+								></iconify-icon>
+							</h3>
 						</svelte:fragment>
 						<svelte:fragment slot="content">
 							<div class="space-y-2">
@@ -444,7 +457,9 @@
 					</AccordionItem>
 					<AccordionItem>
 						<svelte:fragment slot="summary">
-							<h3 class="h3">Kontrolne točke</h3>
+							<h3 class="h3">
+								Kontrolne točke <iconify-icon icon="mdi:map-marker-multiple-outline"></iconify-icon>
+							</h3>
 						</svelte:fragment>
 						<svelte:fragment slot="content">
 							<MapPreview
@@ -465,12 +480,15 @@
 			<div class="pt-8">
 				{#if inside_border === false}
 					<div class="variant-filled-error text-center">
-						<p>Karta je izven območja DTK50.</p>
+						<p>
+							<iconify-icon icon="material-symbols:error"></iconify-icon>Karta je izven območja
+							DTK50.
+						</p>
 					</div>
 				{:else}
 					<div class="flex justify-center w-100%">
 						<button class="btn variant-filled-primary inline-block" on:click={get_map}
-							>Ustvari karto</button
+							>Ustvari karto <iconify-icon icon="mdi:map-plus"></iconify-icon></button
 						>
 					</div>
 				{/if}
@@ -485,8 +503,13 @@
 						</div>
 					{:catch error}
 						<div class="variant-filled-error text-center">
-							<p>Ups, prišlo je do napake.</p>
-							<cite>{error.message}</cite>
+							<p>
+								<iconify-icon icon="material-symbols:error"></iconify-icon>Ups, prišlo je do napake.
+							</p>
+							<cite
+								><iconify-icon icon="material-symbols:chat-error-sharp"></iconify-icon>
+								{error.message}</cite
+							>
 						</div>
 					{/await}
 				{/if}
