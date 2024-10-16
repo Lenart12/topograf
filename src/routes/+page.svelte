@@ -3,7 +3,7 @@
 	// import { onMount } from 'svelte';
 
 	import CoordSelector from '$lib/CoordSelector.svelte';
-	import { Accordion, AccordionItem } from '@skeletonlabs/skeleton';
+	import { Accordion, AccordionItem, SlideToggle } from '@skeletonlabs/skeleton';
 	import MapPreview from '$lib/MapPreview.svelte';
 
 	// Konfiguracija
@@ -75,17 +75,61 @@
 			return 'Karta je bila uspešno ustvarjena.';
 		})();
 	}
+	let navodila_open = false;
 </script>
+
+<svelte:head>
+	<title>Topograf - Ustvaro svojo karto</title>
+</svelte:head>
 
 <main>
 	<div class="container mx-auto p-0 md:p-8">
 		<div class="card inline-block w-full px-0 pb-4 md:p-8">
 			<div class="card-header">
-				<h1 class="h1">Ustvari svojo karto</h1>
+				<h1 class="h1">Ustvari svojo karto!</h1>
 			</div>
 
-			<div class="px-4">
-				<p class="lead">Klikni na zemljevid ali premakni ročico željene karte.</p>
+			<div class="px-4 mt-4">
+				<Accordion regionControl="variant-soft" regionPanel="variant-soft">
+					<AccordionItem bind:open={navodila_open}>
+						<svelte:fragment slot="summary">
+							<h3 class="h3">Navodila</h3>
+							(Klikni tu za {!navodila_open ? 'razširitev' : 'skritje'})
+						</svelte:fragment>
+						<svelte:fragment slot="content">
+							<p class="lead">
+								Na zemljevidu izberi želeno območje in nastavitve karte. Klikni na gumb "Ustvari
+								karto" in počakaj na rezultat. Ko je karta pripravljena, se bo odprl nov zavihek s
+								tvojo karto in tudi pojavil gumb za ogled karte. Če si po ogledu zavovoljen, lahko
+								karto potem preneseš ali deliš povezavo do nje, vendar ne računaj na to, da bo
+								ostala dostopna za vedno.
+
+								<br /><br />
+								Na računalniku lahko zemljevid premikaš z drsenjem miške in povečuješ z vrtenjem kolesca
+								ob držanju tipke CTRL oz. CMD. Na mobilnih napravah lahko zemljevid premikaš in povečaš
+								samo s potezo dveh prstov.
+
+								<br /><br />
+								Izrez izbereš tako, da klikneš na zemljevid kjer ga bo centriralo na izbrano lokacijo.
+								Potem ga lahko premikaš s premikom miške med držanjem klika na sredinsko oznako. Tvoja
+								izbira bo označena s črnim okvirjem, ki prikazuje izrez karte. Poleg tega je v odseku
+								<i>Postavitev</i> možen tudi vnos koordinat sredine izbranega izreza.
+
+								<br /><br />
+								Območje vseh listov DTK50 je označeno z rdečo črto. Če je izrez izven območja DTK50,
+								se prikazuje opozorilo. Na notranji strani roba tega območja je s sivo obarvano območje,
+								ki na DTK50 nima podatkov, vendar je še vedno na listih. Ker ima DTK50 drug koordinatni
+								sistem (D96/TM) kot zemljevid, na kateri izbiraš izrez, se bo izrez raztegnil tako, da
+								bo pravokoten v TM koordinatnih sistemih. Zato njegov črn okvir ne bo izgledal čisto
+								poravnan glede na zemljevid.
+
+								<br /><br />
+								V nastavitvah je več odsekov, ki vplivajo na izgled karte. Vsakega se lahko razširi in
+								skrije s klikom na naslov odseka, tako kot ta navodila.
+							</p>
+						</svelte:fragment>
+					</AccordionItem>
+				</Accordion>
 				<div class="mt-2">
 					<CoordSelector
 						bind:map_center_e
@@ -242,7 +286,7 @@
 							<div class="space-y-2">
 								<h3 class="h3">Koordinatni sistemi</h3>
 								<div>
-									<label for="epsg">Koordinatni sistem</label>
+									<label for="epsg">Koordinatni sistem karte</label>
 									<div class="btn-group variant-soft flex-wrap items-stretch">
 										<input
 											hidden
@@ -302,9 +346,19 @@
 								</div>
 
 								<div>
-									<label class="flex items-center space-x-2">
-										<input class="checkbox" type="checkbox" bind:checked={edge_wgs84} />
-										<p>WGS84 koordinatni sistem na robu</p>
+									<label for="edge_wgs84">
+										<p>
+											WGS84 koordinatni sistem na robu {edge_wgs84 ? 'vklopljen' : 'izklopljen'}
+										</p>
+										<div>
+											<SlideToggle
+												name="edge_wgs84"
+												bind:checked={edge_wgs84}
+												rounded="rounded-none"
+												size="sm"
+												active="bg-primary-500"
+											/>
+										</div>
 									</label>
 								</div>
 								<label for="raster_layer">
@@ -348,7 +402,7 @@
 								bind:inside_border
 							/>
 							<h3 class="h3">Kontrolne točke</h3>
-							<span class="text-error">WIP</span>
+							<h1 class="h1 text-center">V izdelavi...</h1>
 						</svelte:fragment>
 					</AccordionItem>
 				</Accordion>

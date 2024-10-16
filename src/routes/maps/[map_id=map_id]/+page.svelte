@@ -23,6 +23,16 @@
 		['edge_wgs84', 'WGS84 na robu', (v: any) => (v ? 'Da' : 'Ne')]
 	] as MapProperty[];
 
+	const pdf_aspect_ratio = data.map_config.map_size_w_m / data.map_config.map_size_h_m;
+	const resize_pdf = () => {
+		if (!pdf_viewer) return;
+		const pdf_width = pdf_viewer.clientWidth;
+		const toolbar_height = 32;
+		const pdf_height = pdf_width / pdf_aspect_ratio + toolbar_height;
+		pdf_viewer.height = `${pdf_height}px`;
+		console.log(pdf_height);
+	};
+
 	onMount(() => {
 		const pdf_blob = new Blob([new Uint8Array(data.map_pdf)], { type: 'application/pdf' });
 		const pdf_url = URL.createObjectURL(pdf_blob);
@@ -30,16 +40,23 @@
 		download_button.href = pdf_url;
 		download_button.download = `${data.map_config.naslov1}.pdf`;
 
+		pdf_viewer.onload = resize_pdf;
+		window.onresize = resize_pdf;
+
 		return () => {
 			URL.revokeObjectURL(pdf_url);
 		};
 	});
 </script>
 
+<svelte:head>
+	<title>Topograf - {title}</title>
+</svelte:head>
+
 <main>
-	<div class="container mx-auto p-8">
-		<div class="card inline-block w-full p-8">
-			<div class="card-header my-4">
+	<div class="container mx-auto p-0 md:p-8">
+		<div class="card inline-block w-full p-0 md:p-8">
+			<div class="card-header">
 				<h1 class="h1">{title}</h1>
 				<h2 class="h2">{data.map_config.naslov2}</h2>
 			</div>
