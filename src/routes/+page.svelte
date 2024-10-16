@@ -1,7 +1,5 @@
 <script lang="ts">
-	// import type { Map, PointExpression } from 'leaflet';
-	// import { onMount } from 'svelte';
-
+	import { debounce } from 'ts-debounce';
 	import CoordSelector from '$lib/CoordSelector.svelte';
 	import { Accordion, AccordionItem, SlideToggle } from '@skeletonlabs/skeleton';
 	import MapPreview from '$lib/MapPreview.svelte';
@@ -76,6 +74,25 @@
 		})();
 	}
 	let navodila_open = false;
+
+	let title_edited = false;
+	let suggested_title = '';
+
+	const set_title = debounce(async (lat: number, lon: number) => {
+		if (isNaN(lat) || isNaN(lon)) return;
+
+		const response = await fetch(
+			`https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lon}&format=json&addressdetails=0&zoom=12`
+		);
+		const data = await response.json();
+
+		suggested_title = data.name;
+
+		if (title_edited) return;
+		naslov1 = suggested_title;
+		naslov2 = 'Karta za orientacijo';
+	}, 500);
+	$: set_title(map_center_n, map_center_e);
 </script>
 
 <svelte:head>
@@ -237,13 +254,46 @@
 						<svelte:fragment slot="content">
 							<h4 class="h4">Naslovi</h4>
 							<div>
-								<label for="naslov1">Naslov prva vrstica</label>
-								<input class="input" id="naslov1" type="text" bind:value={naslov1} />
+								<label for="naslov1">
+									<span> Naslov prva vrstica </span>
+									{#if title_edited && suggested_title && !naslov1.includes(suggested_title)}
+										<span>
+											- Predlagan naslov: {suggested_title}
+											<button
+												class="btn p-0 variant-filled-surface"
+												on:click={() => {
+													naslov1 = suggested_title;
+													title_edited = false;
+												}}
+											>
+												<iconify-icon icon="material-symbols:variable-insert-outline"
+												></iconify-icon>
+											</button>
+										</span>
+									{/if}
+								</label>
+								<input
+									class="input"
+									id="naslov1"
+									type="text"
+									bind:value={naslov1}
+									on:input={() => {
+										title_edited = true;
+									}}
+								/>
 							</div>
 
 							<div>
 								<label for="naslov2">Naslov druga vrstica</label>
-								<input class="input" id="naslov2" type="text" bind:value={naslov2} />
+								<input
+									class="input"
+									id="naslov2"
+									type="text"
+									bind:value={naslov2}
+									on:input={() => {
+										title_edited = true;
+									}}
+								/>
 							</div>
 							<br />
 							<h4 class="h4">Dodatno</h4>
