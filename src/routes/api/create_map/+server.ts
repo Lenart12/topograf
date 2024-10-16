@@ -12,6 +12,7 @@ const allowed_chars = /^[a-zA-Z0-9À-ž\-\.\,\! ]*$/;
 
 interface CreateMapRequest {
   map_id: string;
+  request_type: string;
 
   map_size_w_m: number;
   map_size_h_m: number;
@@ -60,6 +61,8 @@ async function validate_request_file(file: File | string | null) {
 
 async function validate_request(fd: FormData) {
   const validated = {} as CreateMapRequest;
+  validated.request_type = 'create_map';
+
   validated.map_size_w_m = parseFloat(fd.get('map_size_w_m') as string);
   if (isNaN(validated.map_size_w_m) || validated.map_size_w_m > 1) throw new Error('Velikost karte je prevelika (širina) (max 1m)');
   validated.map_size_h_m = parseFloat(fd.get('map_size_h_m') as string);
@@ -72,6 +75,10 @@ async function validate_request(fd: FormData) {
   if (isNaN(validated.map_e)) throw new Error('Napačen map_e');
   validated.map_n = parseInt(fd.get('map_n') as string);
   if (isNaN(validated.map_n)) throw new Error('Napačen map_n');
+
+  if (validated.map_w >= validated.map_e) throw new Error('map_w >= map_e');
+  if (validated.map_s >= validated.map_n) throw new Error('map_s >= map_n');
+
   validated.target_scale = parseInt(fd.get('target_scale') as string);
   if (isNaN(validated.target_scale) || validated.target_scale > 100000) throw new Error('Merilo je napačno ali preveliko (max 1:100000)');
   validated.naslov1 = fd.get('naslov1') as string;
@@ -109,6 +116,7 @@ const limiter = new RateLimiter({
 });
 
 export async function POST(event) {
+  console.log('POST /api/create_map');
   const { request } = event;
   let validated: CreateMapRequest;
   try {
@@ -117,6 +125,7 @@ export async function POST(event) {
     let error_message = '';
     if (error instanceof Error) error_message = error.message;
     else error_message = `${error}`;
+    console.log('Bad request:', error_message);
     return new Response(error_message, { status: 400 });
   }
 

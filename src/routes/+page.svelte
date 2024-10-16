@@ -4,6 +4,7 @@
 
 	import CoordSelector from '$lib/CoordSelector.svelte';
 	import { Accordion, AccordionItem } from '@skeletonlabs/skeleton';
+	import MapPreview from '$lib/MapPreview.svelte';
 
 	// Konfiguracija
 	let velikost: 'a4' | 'a3' = 'a4';
@@ -83,62 +84,7 @@
 				<h1 class="h1">Ustvari svojo karto</h1>
 			</div>
 
-			<div class="flex flex-row gap-8 flex-wrap px-4">
-				<div>
-					<h3 class="h3">Velikost</h3>
-					<div class="btn-group variant-soft">
-						<input hidden type="radio" id="velikost_a4" bind:group={velikost} value="a4" />
-						<label for="velikost_a4" class="p-2" class:variant-filled-primary={velikost == 'a4'}
-							>A4</label
-						>
-						<input hidden type="radio" id="velikost_a3" bind:group={velikost} value="a3" />
-						<label for="velikost_a3" class="p-2" class:variant-filled-primary={velikost == 'a3'}
-							>A3</label
-						>
-					</div>
-				</div>
-
-				<div>
-					<h3 class="h3">Postavitev karte</h3>
-					<div class="btn-group variant-soft">
-						<input hidden type="radio" id="postavitev_l" bind:group={postavitev} value="l" />
-						<label for="postavitev_l" class="p-2" class:variant-filled-primary={postavitev == 'l'}
-							>Ležeče</label
-						>
-						<input hidden type="radio" id="postavitev_p" bind:group={postavitev} value="p" />
-						<label for="postavitev_p" class="p-2" class:variant-filled-primary={postavitev == 'p'}
-							>Pokončno</label
-						>
-					</div>
-				</div>
-
-				<div>
-					<h3 class="h3">Merilo</h3>
-					<input class="input" type="number" bind:value={target_scale} />
-				</div>
-			</div>
-
 			<p class="lead mt-8 px-4">Klikni na zemljevid ali premakni ročico željene karte.</p>
-			<p class="lead px-4">
-				Sredina karte (WGS84): lat=<input
-					class="input inline-block w-auto"
-					type="number"
-					step="any"
-					bind:value={map_center_n}
-				/>
-				lon=<input
-					class="input inline-block w-auto"
-					type="number"
-					step="any"
-					bind:value={map_center_e}
-				/>
-			</p>
-			{#if map_e && map_n && map_s && map_w}
-				<p class="lead px-4">
-					Trenutni izrez (D96/TM): e<sub>min</sub>={map_w} n<sub>min</sub>={map_s}, e<sub>max</sub
-					>={map_e}, n<sub>max</sub>={map_n}
-				</p>
-			{/if}
 			<div class="px-4 mt-2">
 				<CoordSelector
 					bind:map_center_e
@@ -153,46 +99,139 @@
 					bind:inside_border
 				/>
 			</div>
-			<div class="p-4 space-y-2">
-				<h3 class="h3">Označbe</h3>
-				<div>
-					<label for="naslov1">Naslov prva vrstica</label>
-					<input class="input" id="naslov1" type="text" bind:value={naslov1} />
-				</div>
 
-				<div>
-					<label for="naslov2">Naslov druga vrstica</label>
-					<input class="input" id="naslov2" type="text" bind:value={naslov2} />
-				</div>
-
-				<div>
-					<label for="dodatno">Dodatna vrstica (Tretja vrstica desno)</label>
-					<input class="input" id="dodatno" type="text" bind:value={dodatno} />
-				</div>
-
-				<div>
-					<label for="slikal">Slika levo</label>
-					<input
-						class="input"
-						id="slikal"
-						type="file"
-						accept="image/png, image/jpeg"
-						bind:files={slikal}
-					/>
-				</div>
-
-				<div>
-					<label for="slikad">Slika desno</label>
-					<input
-						class="input"
-						id="slikad"
-						type="file"
-						accept="image/png, image/jpeg"
-						bind:files={slikad}
-					/>
-				</div>
-
+			<div class="p-4">
 				<Accordion regionControl="variant-soft" regionPanel="variant-soft">
+					<AccordionItem open>
+						<svelte:fragment slot="summary">
+							<h3 class="h3">Postavitev</h3>
+						</svelte:fragment>
+						<svelte:fragment slot="content">
+							<div class="flex flex-row gap-8 flex-wrap">
+								<div>
+									<h4 class="h4">Velikost</h4>
+									<div class="btn-group variant-soft">
+										<input hidden type="radio" id="velikost_a4" bind:group={velikost} value="a4" />
+										<label
+											for="velikost_a4"
+											class="p-2"
+											class:variant-filled-primary={velikost == 'a4'}>A4</label
+										>
+										<input hidden type="radio" id="velikost_a3" bind:group={velikost} value="a3" />
+										<label
+											for="velikost_a3"
+											class="p-2"
+											class:variant-filled-primary={velikost == 'a3'}>A3</label
+										>
+									</div>
+								</div>
+
+								<div>
+									<h4 class="h4">Postavitev karte</h4>
+									<div class="btn-group variant-soft">
+										<input
+											hidden
+											type="radio"
+											id="postavitev_l"
+											bind:group={postavitev}
+											value="l"
+										/>
+										<label
+											for="postavitev_l"
+											class="p-2"
+											class:variant-filled-primary={postavitev == 'l'}>Ležeče</label
+										>
+										<input
+											hidden
+											type="radio"
+											id="postavitev_p"
+											bind:group={postavitev}
+											value="p"
+										/>
+										<label
+											for="postavitev_p"
+											class="p-2"
+											class:variant-filled-primary={postavitev == 'p'}>Pokončno</label
+										>
+									</div>
+								</div>
+
+								<div>
+									<h4 class="h4">Merilo</h4>
+									<input class="input" type="number" bind:value={target_scale} />
+								</div>
+							</div>
+							<br />
+							<p class="lead">
+								Sredina karte<sub>WGS84</sub>: lat=<input
+									class="input inline-block w-auto"
+									type="number"
+									step="any"
+									bind:value={map_center_n}
+								/>
+								lon=<input
+									class="input inline-block w-auto"
+									type="number"
+									step="any"
+									bind:value={map_center_e}
+								/>
+							</p>
+							{#if map_e && map_n && map_s && map_w}
+								<p class="lead">
+									Trenutni izrez<sub>D96/TM</sub>: e<sub>min</sub>={map_w} n<sub>min</sub>={map_s},
+									e<sub>max</sub>={map_e}, n<sub>max</sub>={map_n}
+								</p>
+							{/if}
+						</svelte:fragment>
+					</AccordionItem>
+					<AccordionItem open>
+						<svelte:fragment slot="summary">
+							<h3 class="h3">Označbe</h3>
+						</svelte:fragment>
+						<svelte:fragment slot="content">
+							<h4 class="h4">Naslovi</h4>
+							<div>
+								<label for="naslov1">Naslov prva vrstica</label>
+								<input class="input" id="naslov1" type="text" bind:value={naslov1} />
+							</div>
+
+							<div>
+								<label for="naslov2">Naslov druga vrstica</label>
+								<input class="input" id="naslov2" type="text" bind:value={naslov2} />
+							</div>
+							<br />
+							<h4 class="h4">Dodatno</h4>
+							<div>
+								<label for="dodatno"
+									>Dodatna vrstica (Tretja vrstica v desnem stolpcu na ustvarjeni karti)</label
+								>
+								<input class="input" id="dodatno" type="text" bind:value={dodatno} />
+							</div>
+							<br />
+							<h4 class="h4">Slike</h4>
+							<div>
+								<label for="slikal">Slika levo od naslova</label>
+								<input
+									class="input"
+									id="slikal"
+									type="file"
+									accept="image/png, image/jpeg"
+									bind:files={slikal}
+								/>
+							</div>
+
+							<div>
+								<label for="slikad">Slika desno od naslova</label>
+								<input
+									class="input"
+									id="slikad"
+									type="file"
+									accept="image/png, image/jpeg"
+									bind:files={slikad}
+								/>
+							</div>
+						</svelte:fragment>
+					</AccordionItem>
 					<AccordionItem>
 						<svelte:fragment slot="summary">
 							<h3 class="h3">Napredne nastavitve</h3>
@@ -293,8 +332,27 @@
 							</div>
 						</svelte:fragment>
 					</AccordionItem>
+					<AccordionItem>
+						<svelte:fragment slot="summary">
+							<h3 class="h3">Kontrolne točke</h3>
+						</svelte:fragment>
+						<svelte:fragment slot="content">
+							<MapPreview
+								bind:map_w
+								bind:map_s
+								bind:map_e
+								bind:map_n
+								bind:raster_layer
+								bind:inside_border
+							/>
+							<h3 class="h3">Kontrolne točke</h3>
+							<span class="text-error">WIP</span>
+						</svelte:fragment>
+					</AccordionItem>
 				</Accordion>
+			</div>
 
+			<div class="pt-8">
 				{#if inside_border === false}
 					<div class="variant-filled-error text-center">
 						<p>Karta je izven območja DTK50.</p>

@@ -595,11 +595,36 @@ def create_map(configuration):
     map_img.save(output_file, dpi=(TARGET_DPI, TARGET_DPI))
 
     configuration.pop('temp_folder')
+    configuration.pop('request_type')
     configuration['raster_folder'] = os.path.basename(os.path.dirname(raster_folder))
     configuration['slikal'] = os.path.basename(slikal) if slikal else None
     configuration['slikad'] = os.path.basename(slikad) if slikad else None
     with open(output_conf, 'w') as f:
         json.dump(configuration, f)
+
+def map_preview(configuration):
+    map_w = configuration['map_w']
+    map_s = configuration['map_s']
+    map_e = configuration['map_e']
+    map_n = configuration['map_n']
+    raster_folder = configuration['raster_folder']
+
+    logger.info(f'Creating map preview. ({map_w}, {map_s}, {map_e}, {map_n})')
+
+    if raster_folder != '':
+        grid_raster = get_raster_map(raster_folder, (map_w, map_s, map_e, map_n))
+        grid_img = Image.fromarray(rasterio.plot.reshape_as_image(grid_raster), 'RGB')
+    else:
+        logger.info('Skipping raster map.')
+        map_width = map_e - map_w
+        map_height = map_n - map_s
+        map_ratio = map_width / map_height
+        target_width = 100
+        target_height = int(target_width / map_ratio)
+        target_size = (target_width, target_height)
+        grid_img = Image.new('RGB', target_size, 0xFFFFFF)
+
+    grid_img.save(configuration['output_file'], dpi=(TARGET_DPI, TARGET_DPI))
 
 
 def main():
@@ -612,7 +637,14 @@ def main():
     
 
     configuration = json.loads(base64.b64decode(sys.argv[1]).decode('utf-8'))
-    create_map(configuration)
+
+    if configuration['request_type'] == 'create_map':
+        create_map(configuration)
+    elif configuration['request_type'] == 'map_preview':
+        map_preview(configuration)
+    else:
+        logger.error(f'Unknown request type: {configuration["request_type"]}')
+        exit(1)
 
 if __name__ == '__main__':
     main()
