@@ -44,7 +44,7 @@ async function validate_request(fd: FormData) {
   else throw new Error('Napačen raster sloj');
 
   const output_dir = `${TEMP_FOLDER}/map_previews`;
-  if (!fs.existsSync(output_dir)) await fs.promises.mkdir(output_dir);
+  if (!fs.existsSync(output_dir)) await fs.promises.mkdir(output_dir, { recursive: true });
   validated.output_file = `${output_dir}/${get_map_id(validated)}.png`;
 
   return validated;
