@@ -532,6 +532,77 @@ def draw_markings(map_img, bbox, naslov1, naslov2, dodatno, slikal, slikad, epsg
         map_source_p0[1] -= map_info_font.getbbox(txt)[3]
 
         
+def get_preview_image(bounds, epsg, raster_folder):
+    if raster_folder != '':
+        grid_raster = get_raster_map(raster_folder, bounds)
+        grid_img = Image.fromarray(rasterio.plot.reshape_as_image(grid_raster), 'RGB')
+    else:
+        target_pxpm = 1 / 4 # 4m resolution
+        map_width = bounds[2] - bounds[0]
+        map_height = bounds[3] - bounds[1]
+        target_size = (int(map_width * target_pxpm), int(map_height * target_pxpm))
+        grid_img = Image.new('RGB', target_size, 0xFFFFFF)
+        logger.info(f'Created blank raster map. ({target_size})')
+
+    max_preview_size = 2000
+    if any([d > max_preview_size for d in grid_img.size]):
+        aspect_ratio = grid_img.size[0] / grid_img.size[1]
+        target_size = (max_preview_size, int(max_preview_size / aspect_ratio))
+        grid_img = grid_img.resize(target_size)
+        logger.info(f'Resized raster map. ({target_size})')
+
+    # Draw coordinate system
+    if epsg != 'Brez':
+        grid_draw = ImageDraw.Draw(grid_img)
+        grid_font = ImageFont.truetype('timesi.ttf', 48)
+        grid_to_world_tr = rasterio.transform.AffineTransformer(rasterio.transform.from_bounds(*bounds, *grid_img.size))
+        grid_to_world_tr.colrow = lambda x, y: grid_to_world_tr.rowcol(x, y)[::-1]
+        cs_from = pyproj.CRS.from_epsg(3794)
+        cs_to = pyproj.CRS.from_epsg(int(epsg.split(':')[1]))
+        cs_from_to_tr = pyproj.Transformer.from_crs(cs_from, cs_to)
+        cs_to_from_tr = pyproj.Transformer.from_crs(cs_to, cs_from)
+
+        logger.info(f'Drawing coordinate system. - ({cs_to.name})')
+
+        if not cs_to.is_projected:
+            raise ValueError('The target coordinate system must be projected.')
+
+        superscript_map = {
+            "0": "⁰", "1": "¹", "2": "²", "3": "³", "4": "⁴", "5": "⁵", "6": "⁶", "7": "⁷", "8": "⁸", "9": "⁹"}
+
+        grid_edge_ws = grid_to_world_tr.xy(grid_img.size[1], 0)
+        grid_edge_en = grid_to_world_tr.xy(0, grid_img.size[0])
+
+        # Convert to target coordinate system
+        grid_edge_ws = cs_from_to_tr.transform(grid_edge_ws[0], grid_edge_ws[1])
+        grid_edge_en = cs_from_to_tr.transform(grid_edge_en[0], grid_edge_en[1])
+
+        grid_edge_ws_grid = (math.ceil(grid_edge_ws[0] / 1000) * 1000, math.ceil(grid_edge_ws[1] / 1000) * 1000)
+        grid_edge_en_grid = (math.floor(grid_edge_en[0] / 1000 + 1) * 1000, math.floor(grid_edge_en[1] / 1000 + 1) * 1000)
+
+        for x in range(int(grid_edge_ws_grid[0]), int(grid_edge_en_grid[0]), 1000):
+            xline_s = grid_to_world_tr.colrow(*cs_to_from_tr.transform(x, grid_edge_ws[1]))
+            xline_n = grid_to_world_tr.colrow(*cs_to_from_tr.transform(x, grid_edge_en[1]))
+            grid_draw.line([xline_n, xline_s], fill='black')
+            cord = f'{int(x):06}'
+            txt = f'{superscript_map[cord[-6]]}{cord[-5:-3]}'
+            grid_draw.text(xline_s, txt, fill='red', align='center', anchor='lb', font=grid_font)
+            grid_draw.text(xline_n, txt, fill='red', align='center', anchor='lt', font=grid_font)
+
+        for y in range(int(grid_edge_ws_grid[1]), int(grid_edge_en_grid[1]), 1000):
+            yline_w = grid_to_world_tr.colrow(*cs_to_from_tr.transform(grid_edge_ws[0], y))
+            yline_e = grid_to_world_tr.colrow(*cs_to_from_tr.transform(grid_edge_en[0], y))
+            cord = f'{int(y):06}'
+            txt = f'{superscript_map[cord[-6]]}{cord[-5:-3]}'
+            grid_draw.text(yline_w, txt, fill='red', align='center', anchor='lb', font=grid_font)
+            grid_draw.text(yline_e, txt, fill='red', align='center', anchor='rb', font=grid_font)
+            grid_draw.line([yline_w, yline_e], fill='black')
+    else:
+        logger.info('Skipping coordinate system drawing.')
+
+
+    return grid_img
+
 def create_map(configuration):
     # Unpack the configuration
     # Map index
@@ -607,22 +678,13 @@ def map_preview(configuration):
     map_s = configuration['map_s']
     map_e = configuration['map_e']
     map_n = configuration['map_n']
+    epsg = configuration['epsg']
     raster_folder = configuration['raster_folder']
 
-    logger.info(f'Creating map preview. ({map_w}, {map_s}, {map_e}, {map_n})')
-
-    if raster_folder != '':
-        grid_raster = get_raster_map(raster_folder, (map_w, map_s, map_e, map_n))
-        grid_img = Image.fromarray(rasterio.plot.reshape_as_image(grid_raster), 'RGB')
-    else:
-        logger.info('Skipping raster map.')
-        map_width = map_e - map_w
-        map_height = map_n - map_s
-        map_ratio = map_width / map_height
-        target_width = 100
-        target_height = int(target_width / map_ratio)
-        target_size = (target_width, target_height)
-        grid_img = Image.new('RGB', target_size, 0xFFFFFF)
+    logger.info(f'Creating map preview. ({map_w}, {map_s}, {map_e}, {map_n}, {epsg}, {raster_folder})')
+    bounds = (map_w, map_s, map_e, map_n)
+    
+    grid_img = get_preview_image(bounds, epsg, raster_folder)
 
     grid_img.save(configuration['output_file'], dpi=(TARGET_DPI, TARGET_DPI))
 

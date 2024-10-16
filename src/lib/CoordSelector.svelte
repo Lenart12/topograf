@@ -1,9 +1,10 @@
 <script lang="ts">
-	import type { LatLngExpression, Map, Marker, Polygon, MapOptions } from 'leaflet';
+	import type { LatLngExpression, Map, Marker, Polygon } from 'leaflet';
 	import { booleanContains } from '@turf/boolean-contains';
 	import proj4 from 'proj4';
 	import * as dtk50 from '$lib/dtk50_borders';
 	import LeafletMap from './LeafletMap.svelte';
+	import { createEventDispatcher } from 'svelte';
 
 	export let map_center_e: number;
 	export let map_center_n: number;
@@ -27,6 +28,9 @@
 	export let map_w: number;
 
 	export let inside_border: boolean;
+	export let ask_before_moving: boolean = false;
+
+	const dispatch = createEventDispatcher();
 
 	proj4.defs(
 		'EPSG:3794',
@@ -35,6 +39,18 @@
 
 	let draw_map_border: () => void;
 	let place_marker: (latlng: LatLngExpression) => void;
+
+	const confirm_move = () => {
+		if (
+			ask_before_moving &&
+			!confirm('Ali res želite premakniti izrez?\nTo dejanje bo razveljavilo vse kontrolne tocke!')
+		) {
+			return false;
+		}
+		dispatch('confirmed_move');
+		ask_before_moving = false;
+		return true;
+	};
 
 	const on_map_ready = async () => {
 		map.setView([45.7962, 14.3632], 14);
@@ -109,7 +125,12 @@
 			}
 		};
 
-		place_marker = (latlng: LatLngExpression) => {
+		place_marker = (latlng: LatLngExpression, confirm: boolean | undefined = true) => {
+			if (confirm && !confirm_move()) {
+				console.log('place to', latlng, 'canceled');
+				return;
+			}
+			console.log('place to', latlng, 'confirmed', confirm);
 			if (map_center_marker) {
 				map.removeLayer(map_center_marker);
 			}
@@ -124,6 +145,13 @@
 			map_center_e = latlng.lng;
 			draw_map_border();
 			map_center_marker.on('move', (e) => {
+				console.log('move', e);
+				if (!confirm_move()) {
+					console.log('stopping!');
+					// @ts-expect-error
+					place_marker(e.oldLatLng, false);
+					return;
+				}
 				latlng = map_center_marker.getLatLng();
 				_map_center_n = latlng.lat;
 				_map_center_e = latlng.lng;

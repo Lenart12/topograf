@@ -7,24 +7,34 @@
 	export let map_s: number;
 	export let map_e: number;
 	export let map_n: number;
+	export let epsg: string;
 	export let raster_layer: string;
 	export let inside_border: boolean;
+	export let preview_correct: boolean;
+	export let clear_preview: () => void;
+
+	let _map_w: number;
+	let _map_s: number;
+	let _map_e: number;
+	let _map_n: number;
+
+	$: preview_correct = _map_w === map_w && _map_s === map_s && _map_e === map_e && _map_n === map_n;
 
 	let preview_promise: Promise<void>;
-	let map_preview: HTMLDivElement;
 	let initial_text: HTMLDivElement;
 	let coordinates_text: HTMLDivElement;
 
 	let L: typeof import('leaflet');
 	let map: Map;
 
-	function create_preview() {
+	function update_raster() {
 		preview_promise = (async () => {
 			const fd = new FormData();
 			fd.append('map_w', map_w.toString());
 			fd.append('map_s', map_s.toString());
 			fd.append('map_e', map_e.toString());
 			fd.append('map_n', map_n.toString());
+			fd.append('epsg', epsg);
 			fd.append('raster_layer', raster_layer);
 			const res = await fetch('/api/map_preview', {
 				method: 'POST',
@@ -61,8 +71,36 @@
 			map.attributionControl.addAttribution(
 				'Podatki: <a href="https://www.e-prostor.gov.si">eProstor</a>'
 			);
+
+			_map_w = map_w;
+			_map_s = map_s;
+			_map_e = map_e;
+			_map_n = map_n;
 		})();
 	}
+
+	$: raster_layer !== undefined && epsg !== undefined && preview_correct && update_raster();
+
+	clear_preview = () => {
+		map.eachLayer(function (layer) {
+			map.removeLayer(layer);
+		});
+		map.setView([0, 0], 0);
+		map.setMaxBounds([
+			[0, 0],
+			[0, 0]
+		]);
+		_map_w = 0;
+		_map_s = 0;
+		_map_e = 0;
+		_map_n = 0;
+		L.marker([0, 0], {
+			icon: L.divIcon({
+				className: '',
+				html: initial_text
+			})
+		}).addTo(map);
+	};
 
 	let map_options: GetMapOptions = (L) => ({
 		crs: L.CRS.Simple,
@@ -104,7 +142,12 @@
 
 <div class="flex justify-center m-2 gap-2">
 	{#if inside_border}
-		<button class="btn variant-filled-primary" on:click={create_preview}>Ustvari predogled</button>
+		<button class="btn variant-filled-primary" on:click={update_raster}>
+			Ustvari predogled
+			{#if !preview_correct}
+				<iconify-icon icon="mdi:alert-circle" />
+			{/if}
+		</button>
 	{:else}
 		<div class="variant-filled-error text-center">
 			<p>Območje ni znotraj meje DTK50.</p>

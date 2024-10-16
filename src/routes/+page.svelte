@@ -97,6 +97,14 @@
 		naslov2 = 'Karta za orientacijo';
 	}, 500);
 	$: set_title(map_center_n, map_center_e);
+
+	let ask_before_moving: boolean;
+	let preview_correct: boolean = false;
+	$: ask_before_moving = preview_correct;
+	let clear_map_preview: () => void;
+	const on_confirmed_move = () => {
+		if (clear_map_preview) clear_map_preview();
+	};
 </script>
 
 <svelte:head>
@@ -165,6 +173,8 @@
 						bind:map_s
 						bind:map_w
 						bind:inside_border
+						bind:ask_before_moving
+						on:confirmed_move={on_confirmed_move}
 					/>
 				</div>
 			</div>
@@ -352,6 +362,9 @@
 						<svelte:fragment slot="content">
 							<div class="space-y-2">
 								<h3 class="h3">Koordinatni sistemi</h3>
+								{#if preview_correct}
+									Menjava koordinatnega sistema bo povzročila ponovno stvaritev predogleda karte!
+								{/if}
 								<div>
 									<label for="epsg">Koordinatni sistem karte</label>
 									<div class="btn-group variant-soft flex-wrap items-stretch">
@@ -430,6 +443,9 @@
 								</div>
 								<label for="raster_layer">
 									<h3 class="h3">Rasterski sloj</h3>
+									{#if preview_correct}
+										Menjava rasterskega sloja bo povzročila ponovno stvaritev predogleda karte!
+									{/if}
 								</label>
 								<div class="btn-group variant-soft flex-wrap items-stretch">
 									<input
@@ -469,6 +485,9 @@
 								bind:map_n
 								bind:raster_layer
 								bind:inside_border
+								bind:preview_correct
+								bind:epsg
+								bind:clear_preview={clear_map_preview}
 							/>
 							<h3 class="h3">Kontrolne točke</h3>
 							<h1 class="h1 text-center">V izdelavi...</h1>

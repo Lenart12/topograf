@@ -15,6 +15,7 @@ interface MapPreviewRequest {
   map_s: number;
   map_e: number;
   map_n: number;
+  epsg: string;
   raster_folder: string;
   output_file: string;
 }
@@ -35,6 +36,8 @@ async function validate_request(fd: FormData) {
   if (isNaN(validated.map_e)) throw new Error('Napačen map_e');
   validated.map_n = parseInt(fd.get('map_n') as string);
   if (isNaN(validated.map_n)) throw new Error('Napačen map_n');
+  validated.epsg = fd.get('epsg') as string;
+  if (!/^EPSG:\d+$|^Brez$/.test(validated.epsg)) throw new Error('Koordinatni sistem je napačen (EPSG:xxxx ali Brez)');
 
   if (validated.map_w >= validated.map_e) throw new Error('map_w >= map_e');
   if (validated.map_s >= validated.map_n) throw new Error('map_s >= map_n');
@@ -58,8 +61,6 @@ const limiter = new RateLimiter({
 export async function POST(event) {
   console.log('POST /api/map_preview');
   const { request } = event;
-  if (await limiter.isLimited(event))
-    return new Response("Preveč zahtev", { status: 429 });
 
   let validated: MapPreviewRequest;
   try {
@@ -71,7 +72,16 @@ export async function POST(event) {
     console.log('Bad request:', error_message);
     return new Response(error_message, { status: 400 });
   }
-  console.log(`Request for map preview ${validated.map_w} ${validated.map_s} ${validated.map_e} ${validated.map_n}`);
+  console.log(`Request for map preview ${validated.map_w} ${validated.map_s} ${validated.map_e} ${validated.map_n} ${validated.epsg} ${validated.raster_folder}`);
+
+  if (fs.existsSync(validated.output_file)) {
+    console.log('Returning cached image');
+    const png = await fs.promises.readFile(validated.output_file);
+    return new Response(png, { headers: { 'Content-Type': 'image/png' } });
+  }
+
+  if (await limiter.isLimited(event))
+    return new Response("Preveč zahtev", { status: 429 });
 
   const pythonCommand = getPythonCommand(`${CREATE_MAP_PY_FOLDER}/.venv`);
   const scriptPath = `${CREATE_MAP_PY_FOLDER}/create_map.py`;
@@ -83,7 +93,6 @@ export async function POST(event) {
     if (stdout) console.log(stdout);
     if (stderr) console.error(stderr);
     const png = await fs.promises.readFile(validated.output_file);
-    await fs.promises.unlink(validated.output_file);
     return new Response(png, { headers: { 'Content-Type': 'image/png' } });
   } catch (error) {
     console.error(error);
