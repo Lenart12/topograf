@@ -88,6 +88,10 @@
 
 		suggested_title = data.name;
 
+		if (suggested_title.length > 30) {
+			suggested_title = suggested_title.slice(0, 27) + '...';
+		}
+
 		if (title_edited) return;
 		naslov1 = suggested_title;
 		naslov2 = 'Karta za orientacijo';
