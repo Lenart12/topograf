@@ -1,6 +1,7 @@
 <script lang="ts">
 	import type { Map } from 'leaflet';
-	import { onMount } from 'svelte';
+	import LeafletMap from './LeafletMap.svelte';
+	import type { GetMapOptions } from './types';
 
 	export let map_w: number;
 	export let map_s: number;
@@ -63,19 +64,15 @@
 		})();
 	}
 
-	onMount(async () => {
-		L = await import('leaflet');
-		const GestureHandling = await import('leaflet-gesture-handling');
-		L.Map.addInitHook('addHandler', 'gestureHandling', GestureHandling.GestureHandling);
-
-		map = L.map(map_preview, {
-			// @ts-ignore
-			gestureHandling: true,
+	let map_options: GetMapOptions = (L) => {
+		return {
 			crs: L.CRS.Simple,
 			minZoom: -5,
 			maxZoom: 1
-		});
+		};
+	};
 
+	const on_map_ready = async () => {
 		L.marker([0, 0], {
 			icon: L.divIcon({
 				className: '',
@@ -104,7 +101,7 @@
 		map.on('mousemove', function (e) {
 			coordinates_text.innerHTML = `n=${e.latlng.lat.toFixed(0)}, e=${e.latlng.lng.toFixed(0)}`;
 		});
-	});
+	};
 </script>
 
 <div class="flex justify-center m-2 gap-2">
@@ -131,7 +128,7 @@
 </div>
 
 <main>
-	<div class="variant-soft" bind:this={map_preview}></div>
+	<LeafletMap class="variant-soft" bind:map bind:L bind:map_options on:ready={on_map_ready} />
 	<div hidden>
 		<div class="h1 center-transform" bind:this={initial_text}>Klikni na gumb ustvari predogled</div>
 	</div>

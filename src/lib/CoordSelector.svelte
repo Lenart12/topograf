@@ -1,15 +1,9 @@
 <script lang="ts">
-	import type { LatLngExpression, Map, Marker, Polygon } from 'leaflet';
-	import { onMount, onDestroy } from 'svelte';
+	import type { LatLngExpression, Map, Marker, Polygon, MapOptions } from 'leaflet';
 	import { booleanContains } from '@turf/boolean-contains';
 	import proj4 from 'proj4';
 	import * as dtk50 from '$lib/dtk50_borders';
-
-	import L_marker_icon from 'leaflet/dist/images/marker-icon.png';
-	import L_marker_icon_2x from 'leaflet/dist/images/marker-icon-2x.png';
-	import L_marker_shadow from 'leaflet/dist/images/marker-shadow.png';
-	import L_layers from 'leaflet/dist/images/layers.png';
-	import L_layers_2x from 'leaflet/dist/images/layers-2x.png';
+	import LeafletMap from './LeafletMap.svelte';
 
 	export let map_center_e: number;
 	export let map_center_n: number;
@@ -22,7 +16,7 @@
 
 	const map_border_m = [0.011, 0.0141, 0.0195, 0.0143]; // N, E, S, W
 
-	let map_html: HTMLElement;
+	let L: typeof import('leaflet');
 	let map: Map;
 	let map_center_marker: Marker;
 	let map_border: Polygon;
@@ -42,14 +36,8 @@
 	let draw_map_border: () => void;
 	let place_marker: (latlng: LatLngExpression) => void;
 
-	onMount(async () => {
-		const L = await import('leaflet');
-		const GestureHandling = await import('leaflet-gesture-handling');
-		L.Map.addInitHook('addHandler', 'gestureHandling', GestureHandling.GestureHandling);
-		map = L.map(map_html, {
-			// @ts-ignore
-			gestureHandling: true
-		}).setView([45.7962, 14.3632], 14);
+	const on_map_ready = async () => {
+		map.setView([45.7962, 14.3632], 14);
 
 		L.tileLayer('https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png', {
 			maxZoom: 17,
@@ -150,35 +138,15 @@
 		});
 
 		place_marker([map_center_n, map_center_e]);
-	});
+	};
 
 	$: map_size_w_m && map_size_h_m && target_scale && draw_map_border && draw_map_border();
 
 	$: (map_center_e !== _map_center_e || map_center_n !== _map_center_n) &&
 		place_marker &&
 		place_marker([map_center_n, map_center_e]);
-
-	onDestroy(async () => {
-		if (map) {
-			map.remove();
-		}
-	});
 </script>
 
 <main>
-	<div bind:this={map_html}></div>
-	<div hidden>
-		<!-- Preload leaflet images -->
-		<img src={L_marker_icon} alt="" />
-		<img src={L_marker_icon_2x} alt="" />
-		<img src={L_marker_shadow} alt="" />
-		<img src={L_layers} alt="" />
-		<img src={L_layers_2x} alt="" />
-	</div>
+	<LeafletMap bind:map bind:L on:ready={on_map_ready} />
 </main>
-
-<style>
-	main div {
-		height: 60vh;
-	}
-</style>

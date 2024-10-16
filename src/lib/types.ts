@@ -1,3 +1,5 @@
+import type { MapOptions } from 'leaflet';
+
 export type CreatedMapConf = {
   map_size_w_m: number;
   map_size_h_m: number;
@@ -16,3 +18,5 @@ export type CreatedMapConf = {
   slikad: string | null;
   map_id: string;
 };
+
+export type GetMapOptions = (L: typeof import('leaflet')) => MapOptions;
