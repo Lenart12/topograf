@@ -8,7 +8,7 @@ import { RateLimiter } from 'sveltekit-rate-limiter/server';
 import crypto_js from 'crypto-js';
 const { MD5 } = crypto_js;
 
-const allowed_chars = /^[a-zA-Z0-9À-ž\-\.\,\! ]*$/;
+const allowed_chars = /^[a-zA-Z0-9À-ž\-.,! ]*$/;
 
 interface CreateMapRequest {
   map_id: string;
@@ -31,6 +31,8 @@ interface CreateMapRequest {
   dodatno: string;
   slikal: string;
   slikad: string;
+
+  control_points: string;
 
   raster_folder: string;
   temp_folder: string;
@@ -90,6 +92,16 @@ async function validate_request(fd: FormData) {
   validated.epsg = fd.get('epsg') as string;
   if (!/^EPSG:\d+$|^Brez$/.test(validated.epsg)) throw new Error('Koordinatni sistem je napačen (EPSG:xxxx ali Brez)');
   validated.edge_wgs84 = fd.get('edge_wgs84') === 'true';
+  validated.control_points = fd.get('control_points') as string;
+  if (validated.control_points.length !== 0) {
+    try {
+      const cps = JSON.parse(validated.control_points);
+      if (!Array.isArray(cps.cps)) throw new Error('Kontrolne točke niso v pravilni obliki (JSON)');
+    } catch (error) {
+      throw new Error('Kontrolne točke niso v pravilni obliki (JSON)');
+    }
+  }
+
   if (fd.get('raster_layer') === 'dtk50') validated.raster_folder = DTK50_FOLDER;
   else if (fd.get('raster_layer') === '') validated.raster_folder = '';
   else throw new Error('Napačen raster sloj');
@@ -136,7 +148,7 @@ export async function POST(event) {
 
   if (!fs.existsSync(maps_folder)) await fs.promises.mkdir(maps_folder);
 
-  if (fs.existsSync(`${maps_folder}/${validated.map_id}`)) {
+  if (fs.existsSync(`${maps_folder}/${validated.map_id}/map.pdf`)) {
     console.log(`Using cached map`);
     return new Response(validated.map_id);
   }

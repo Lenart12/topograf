@@ -9,18 +9,19 @@
 	const title =
 		data.map_config.naslov1 || `Karta za orientacijo ${new Date().toLocaleDateString()}`;
 
-	type MapProperty = [keyof CreatedMapConf, string, (v: any) => string];
+	type MapPropertyValue = string | number | boolean;
+	type MapProperty = [keyof CreatedMapConf, string, (v: MapPropertyValue) => string];
 	const map_properties = [
-		['map_w', 'Zahodna meja', (v: any) => `e=${v}m`],
-		['map_s', 'Južna meja', (v: any) => `n=${v}m`],
-		['map_e', 'Vzhodna meja', (v: any) => `e=${v}m`],
-		['map_n', 'Severna meja', (v: any) => `n=${v}m`],
-		['target_scale', 'Merilo', (v: any) => `1:${v}`],
-		['naslov1', 'Naslov (prva vrstica)', (v: any) => v],
-		['naslov2', 'Naslov (druga vrstica)', (v: any) => v],
-		['dodatno', 'Dodatno', (v: any) => v],
-		['epsg', 'Koordinatni sistem', (v: any) => v],
-		['edge_wgs84', 'WGS84 na robu', (v: any) => (v ? 'Da' : 'Ne')]
+		['map_w', 'Zahodna meja', (v: MapPropertyValue) => `e=${v}m`],
+		['map_s', 'Južna meja', (v: MapPropertyValue) => `n=${v}m`],
+		['map_e', 'Vzhodna meja', (v: MapPropertyValue) => `e=${v}m`],
+		['map_n', 'Severna meja', (v: MapPropertyValue) => `n=${v}m`],
+		['target_scale', 'Merilo', (v: MapPropertyValue) => `1:${v}`],
+		['naslov1', 'Naslov (prva vrstica)', (v: MapPropertyValue) => v],
+		['naslov2', 'Naslov (druga vrstica)', (v: MapPropertyValue) => v],
+		['dodatno', 'Dodatno', (v: MapPropertyValue) => v],
+		['epsg', 'Koordinatni sistem', (v: MapPropertyValue) => v],
+		['edge_wgs84', 'WGS84 na robu', (v: MapPropertyValue) => (v ? 'Da' : 'Ne')]
 	] as MapProperty[];
 
 	const pdf_aspect_ratio = data.map_config.map_size_w_m / data.map_config.map_size_h_m;
@@ -38,7 +39,17 @@
 		const pdf_url = URL.createObjectURL(pdf_blob);
 		pdf_viewer.data = pdf_url;
 		download_button.href = pdf_url;
-		download_button.download = `${data.map_config.naslov1}.pdf`;
+
+		let naslovi = [];
+		if (data.map_config.naslov1) naslovi.push(data.map_config.naslov1);
+		if (data.map_config.naslov2) naslovi.push(data.map_config.naslov2);
+
+		const naslov = naslovi
+			.join(' - ')
+			.substring(0, 60)
+			.replace(/[^a-zA-Z0-9À-ž\- ]/g, '_');
+
+		download_button.download = `${naslov}.pdf`;
 
 		pdf_viewer.onload = resize_pdf;
 		window.onresize = resize_pdf;

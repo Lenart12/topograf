@@ -3,6 +3,9 @@
 	import CoordSelector from '$lib/CoordSelector.svelte';
 	import { Accordion, AccordionItem, SlideToggle } from '@skeletonlabs/skeleton';
 	import MapPreview from '$lib/MapPreview.svelte';
+	import type { ControlPoint, ControlPointJson, ControlPointOptions } from '$lib/types';
+	import { get_cp_name } from '$lib';
+	import { tick } from 'svelte';
 
 	// Konfiguracija
 	let velikost: 'a4' | 'a3' = 'a4';
@@ -30,10 +33,14 @@
 	let slikal: FileList;
 	let slikad: FileList;
 	let raster_layer: 'dtk50' | '' = 'dtk50';
+	let control_points: ControlPoint[] = [];
+
+	let cp_default_color: string = '#ff0000';
+	let control_points_size: number = 3;
 
 	let download_link: HTMLElement;
 
-	let get_map_promise: Promise<any>;
+	let get_map_promise: Promise<string>;
 	function get_map() {
 		const fd = new FormData();
 		fd.append('map_size_w_m', map_size_w_m.toString());
@@ -51,6 +58,7 @@
 		fd.append('slikal', slikal ? slikal[0] : '');
 		fd.append('slikad', slikad ? slikad[0] : '');
 		fd.append('raster_layer', raster_layer);
+		fd.append('control_points', create_control_points_json());
 
 		get_map_promise = (async () => {
 			download_link.innerHTML = '';
@@ -100,11 +108,56 @@
 
 	let ask_before_moving: boolean;
 	let preview_correct: boolean = false;
-	$: ask_before_moving = preview_correct;
+	$: ask_before_moving = preview_correct && control_points.length > 0;
 	let clear_map_preview: () => void;
 	const on_confirmed_move = () => {
 		if (clear_map_preview) clear_map_preview();
 	};
+
+	function create_control_points_json(add_bounds: boolean = true): string {
+		const cp_json = {
+			cp_size: control_points_size / 1000,
+			cps: control_points.map((cp) => {
+				const opts = structuredClone(cp.options);
+				opts.name = opts.name === undefined ? '' : opts.name;
+				return opts;
+			})
+		} as ControlPointJson;
+		if (add_bounds) {
+			cp_json['bounds'] = [map_w, map_s, map_e, map_n];
+		}
+		return JSON.stringify(cp_json);
+	}
+
+	async function import_control_points(event: Event) {
+		const input = event.target as HTMLInputElement;
+		if (!input.files || input.files.length === 0) return;
+
+		const file = input.files[0];
+		const text = await file.text();
+		const json = JSON.parse(text);
+
+		if (json.bounds) {
+			map_w = json.bounds[0];
+			map_s = json.bounds[1];
+			map_e = json.bounds[2];
+			map_n = json.bounds[3];
+			await tick();
+			await update_preview();
+		}
+
+		control_points_size = json.cp_size * 1000;
+		clear_cps();
+		for (const cp of json.cps) {
+			add_cp(cp);
+		}
+	}
+
+	let update_preview: () => Promise<void>;
+	let clear_cps: () => void;
+	let add_cp: (opt: ControlPointOptions) => ControlPoint;
+	let remove_cp: (idx: number) => void;
+	let swap_cp: (idx1: number, idx2: number) => void;
 </script>
 
 <svelte:head>
@@ -483,14 +536,211 @@
 								bind:map_s
 								bind:map_e
 								bind:map_n
+								bind:epsg
 								bind:raster_layer
 								bind:inside_border
 								bind:preview_correct
-								bind:epsg
+								bind:control_points
+								bind:cp_default_color
+								bind:update_preview
 								bind:clear_preview={clear_map_preview}
+								bind:clear_cps
+								bind:add_cp
+								bind:remove_cp
+								bind:swap_cp
 							/>
-							<h3 class="h3">Kontrolne točke</h3>
-							<h1 class="h1 text-center">V izdelavi...</h1>
+							<h3 class="h3">Kontrolne točke (V IZDELAVI - NI STABILNO ALI 100%)</h3>
+
+							<div class="flex flex-col gap-2">
+								<div class="flex flex-row gap-2">
+									<label for="control_points_size">Polmer kontrolnih točk (mm)</label>
+									<input
+										class="w-auto input"
+										id="control_points_size"
+										type="number"
+										step="1"
+										bind:value={control_points_size}
+									/>
+								</div>
+
+								<div class="flex flex-row gap-2 items-center">
+									<label for="cp_color_default">Privzeta barva:</label>
+									<input
+										class="input !rounded-full !h-6 !w-6"
+										id="cp_color_default"
+										type="color"
+										bind:value={cp_default_color}
+									/>
+								</div>
+
+								{#if control_points.length === 0}
+									<p class="lead">Dodaj nove kontrolne točke s klikom na zemljevid.</p>
+								{/if}
+
+								<Accordion regionControl="variant-soft" regionPanel="variant-soft">
+									{#each control_points as cp, i (cp.id)}
+										{@const cp_count = control_points.length}
+										{@const is_first = i === 0}
+										{@const is_last = i === cp_count - 1}
+										<AccordionItem>
+											<svelte:fragment slot="summary">
+												<div class="flex justify-between flex-wrap">
+													<h4 class="h4 whitespace-nowrap">
+														<span style:color="gray">#{cp.id}</span>
+														{get_cp_name(cp, control_points)}
+														<iconify-icon icon="mdi:map-marker"></iconify-icon>
+													</h4>
+													<div class="inline space-x-2 whitespace-nowrap">
+														{#if !is_first}
+															<button
+																class="btn variant-filled-primary"
+																on:click={() => swap_cp(i, i - 1)}
+															>
+																<iconify-icon icon="mdi:arrow-up"></iconify-icon>
+															</button>
+														{/if}
+														{#if !is_last}
+															<button
+																class="btn variant-filled-primary"
+																on:click={() => swap_cp(i, i + 1)}
+															>
+																<iconify-icon icon="mdi:arrow-down"></iconify-icon>
+															</button>
+														{/if}
+														<button
+															class="btn variant-filled-error"
+															on:click={() => remove_cp(cp.id)}
+														>
+															<iconify-icon icon="mdi:map-marker-remove-variant"></iconify-icon>
+														</button>
+													</div>
+												</div>
+											</svelte:fragment>
+											<svelte:fragment slot="content">
+												<div class="flex flex-col gap-2">
+													<div class="flex flex-row gap-2">
+														<label for="cp_n_{cp.id}">N:</label>
+														<input
+															class="w-auto input !bg-surface-500"
+															id="cp_n_{cp.id}"
+															type="number"
+															step="any"
+															bind:value={cp.options.n}
+														/>
+													</div>
+													<div class="flex flex-row gap-2">
+														<label for="cp_e_{cp.id}">E:</label>
+														<input
+															class="w-auto input !bg-surface-500"
+															id="cp_e_{cp.id}"
+															type="number"
+															step="any"
+															bind:value={cp.options.e}
+														/>
+													</div>
+
+													<div class="flex flex-row gap-2">
+														<label for="cp_name_{cp.id}">Ime:</label>
+														<input
+															class="flex-1 !bg-surface-500 p-1 w-auto input"
+															id="cp_name_{cp.id}"
+															type="text"
+															placeholder={get_cp_name(cp, control_points)}
+															bind:value={cp.options.name}
+														/>
+													</div>
+
+													<div class="flex flex-row gap-2 items-center">
+														<label for="cp_kind_{cp.id}">Vrsta:</label>
+														<select
+															class="select !bg-surface-500 p-1 w-auto input"
+															id="cp_kind_{cp.id}"
+															bind:value={cp.options.kind}
+														>
+															<option value="circle">Krog</option>
+															<option value="triangle">Trikotnik</option>
+															<option value="dot">Pika</option>
+															<option value="point">Točka</option>
+															<option value="skip">Preskoči</option>
+														</select>
+													</div>
+
+													{#if !['skip', 'point'].includes(cp.options.kind)}
+														<div class="flex flex-row gap-2 items-center">
+															<label for="cp_color_{cp.id}">Barva:</label>
+															<input
+																class="input !rounded-full !h-6 !w-6"
+																id="cp_color_{cp.id}"
+																type="color"
+																bind:value={cp.options.color}
+															/>
+														</div>
+													{/if}
+
+													{#if cp.options.kind !== 'skip'}
+														<div class="flex flex-row gap-2 items-center">
+															<label for="cp_connect_next_{cp.id}">Povezava z naslednjim:</label>
+															<SlideToggle
+																name="cp_connect_next_{cp.id}"
+																bind:checked={cp.options.connect_next}
+																rounded="rounded-none"
+																size="sm"
+																active="bg-primary-500"
+															/>
+														</div>
+
+														{#if cp.options.connect_next}
+															<div class="flex flex-row gap-2 items-center">
+																<label for="cp_color_line_{cp.id}">Barva povezave:</label>
+																<input
+																	class="input !rounded-full !h-6 !w-6"
+																	id="cp_color_line_{cp.id}"
+																	type="color"
+																	bind:value={cp.options.color_line}
+																/>
+															</div>
+														{/if}
+													{/if}
+												</div>
+											</svelte:fragment>
+										</AccordionItem>
+									{/each}
+								</Accordion>
+								<div class="flex flex-row gap-2">
+									{#if control_points.length > 0}
+										<button class="btn variant-filled-error" on:click={clear_cps}>
+											<iconify-icon icon="mdi:map-marker-remove-variant"></iconify-icon> Odstrani vse
+											kontrolne točke
+										</button>
+										<!-- Izvozi json -->
+										<button
+											class="btn variant-filled-primary"
+											on:click={() => {
+												const json = create_control_points_json();
+												const blob = new Blob([json], { type: 'application/json' });
+												const url = URL.createObjectURL(blob);
+												const a = document.createElement('a');
+												a.href = url;
+												a.download = `kt_${naslov1.replace(/[^a-zA-Z0-9À-ž]/gi, '_')}.json`;
+												a.click();
+												URL.revokeObjectURL(url);
+											}}
+										>
+											<iconify-icon icon="mdi:file-download"></iconify-icon> Izvozi JSON
+										</button>
+									{/if}
+									<input
+										id="import_control_points"
+										class="hidden"
+										type="file"
+										accept="application/json"
+										on:change={import_control_points}
+									/>
+									<label for="import_control_points" class="btn variant-filled-primary">
+										<iconify-icon icon="mdi:file-upload"></iconify-icon> Uvozi JSON
+									</label>
+								</div>
+							</div>
 						</svelte:fragment>
 					</AccordionItem>
 				</Accordion>

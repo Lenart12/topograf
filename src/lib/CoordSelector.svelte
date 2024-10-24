@@ -55,6 +55,7 @@
 	const on_map_ready = async () => {
 		map.setView([45.7962, 14.3632], 14);
 
+		// L.tileLayer('https://maps.komelt.dev/DTK_25/tiles/png/{z}/{y}/{x}.png', {
 		L.tileLayer('https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png', {
 			maxZoom: 17,
 			attribution:
@@ -148,7 +149,7 @@
 				console.log('move', e);
 				if (!confirm_move()) {
 					console.log('stopping!');
-					// @ts-expect-error
+					// @ts-expect-error e is LeafletEvent but should be MarkerDragEvent or something
 					place_marker(e.oldLatLng, false);
 					return;
 				}

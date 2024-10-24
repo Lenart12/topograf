@@ -246,23 +246,23 @@ def draw_grid(map_img, grid_img, map_to_world_tr, grid_to_world_tr, real_to_map_
                 assert(x0 == x1)
                 for y in range(int(y0), int(y1)):
                     if should_draw_grid_line(x0, y, line_dir):
-                        map_draw.line((x0, y, x0 + 2, y), fill='black')
+                        map_draw.line((x0 - 1, y, x0 + 1, y), fill='black')
                     else:
                         # Darken the pixel
                         col = grid_img.getpixel(map_to_grid(x0, y))
                         col = (max(0, col[0] - 90), max(0, col[1] - 90), max(0, col[2] - 90))              
-                        map_draw.line((x0, y, x0 + 2, y), fill=col)
+                        map_draw.line((x0 - 1, y, x0 + 1, y), fill=col)
 
             elif line_dir == 'y':
                 assert(y0 == y1)
                 for x in range(int(x0), int(x1)):
                     if should_draw_grid_line(x, y0, line_dir):
-                        map_draw.line((x, y0, x, y0 + 2), fill='black')
+                        map_draw.line((x, y0 - 1, x, y0 + 1), fill='black')
                     else:
                         # Darken the pixel
                         col = grid_img.getpixel(map_to_grid(x, y0))
                         col = (max(0, col[0] - 90), max(0, col[1] - 90), max(0, col[2] - 90))
-                        map_draw.line((x, y0, x, y0 + 2), fill=col)
+                        map_draw.line((x, y0 - 1, x, y0 + 1), fill=col)
 
         superscript_map = {
             "0": "⁰", "1": "¹", "2": "²", "3": "³", "4": "⁴", "5": "⁵", "6": "⁶", "7": "⁷", "8": "⁸", "9": "⁹"}
@@ -390,6 +390,122 @@ def draw_grid(map_img, grid_img, map_to_world_tr, grid_to_world_tr, real_to_map_
         logger.info('Skipping WGS84 edge drawing.')
         return real_to_map_tr.xy(0, grid_border[3] + border_bottom_px)[0]
 
+def draw_control_points(map_img, map_to_world_tr, control_point_settings):
+    cp_size_real = control_point_settings['cp_size']
+    control_points = control_point_settings['cps']
+
+    if len(control_points) == 0:
+        logger.info('No control points to draw.')
+        return
+
+    logger.info(f'Drawing control points. ({len(control_points)} points)')
+
+    map_supersample = 2
+    cp_img = Image.new('RGBA', [int(p * map_supersample) for p in map_img.size], (0, 0, 0, 0))
+    cp_draw = ImageDraw.Draw(cp_img)
+
+    cp_font = ImageFont.truetype('times.ttf', 60 * map_supersample)
+
+    m_to_px = lambda m: m * TARGET_DPI / 0.0254 * map_supersample
+
+    cp_lines_width_px = int(m_to_px(0.0005)) # 1mm width
+    cp_size_px = cp_lines_width_px + m_to_px(cp_size_real) # 3mm size (plus the width of the lines)
+    cp_dot_size_px = m_to_px(0.0005) # 0.5mm size 
+
+    cp_count = len(control_points)
+
+    
+    def cp_name(i, cp):
+        if cp['name']:
+            return cp['name']
+        if i == 0:
+            return 'START'
+        if i == cp_count - 1 and cp['connect_next'] == False:
+            return 'END'
+                
+        return f'KT{i}'
+    
+    # Recalculate the names and positions of the control points
+    for i, cp in enumerate(control_points):
+        cp['name'] = cp_name(i, cp)
+        x, y = map_to_world_tr.colrow(cp['e'], cp['n'])
+        x, y = x * map_supersample, y * map_supersample
+        cp['x'] = x
+        cp['y'] = y
+
+
+    def next_cp(i):
+        return control_points[(i + 1) % cp_count]
+    
+    def draw_triangle_cp(x, y, col):
+        cp_draw.polygon([
+            (x, y - cp_size_px),
+            (x + cp_size_px * math.cos(math.radians(30)), y + cp_size_px * math.sin(math.radians(30))),
+            (x - cp_size_px * math.cos(math.radians(30)), y + cp_size_px * math.sin(math.radians(30))),
+        ], outline=col, width=cp_lines_width_px)
+
+    
+    def draw_circle_cp(x, y, col):
+        cp_draw.ellipse(
+            (x - cp_size_px, y - cp_size_px,
+             x + cp_size_px, y + cp_size_px),
+             outline=col, width=cp_lines_width_px)
+        
+    def draw_line(from_cp, to_cp):
+        if to_cp['kind'] == 'skip':
+            return
+
+        theta = math.atan2(to_cp['y'] - from_cp['y'], to_cp['x'] - from_cp['x'])
+
+        def cp_radius(cp):
+            if cp['kind'] == 'triangle':
+                return cp_size_px / (2 * math.cos(math.acos(math.sin(3*(theta + math.pi)))/3)) # Circumradius of a triangle
+            elif cp['kind'] == 'dot':
+                return cp_dot_size_px * 2 # Add some margin to the dot
+            elif cp['kind'] == 'point':
+                return 0
+            return cp_size_px
+
+        from_x = from_cp['x'] + cp_radius(from_cp) * math.cos(theta)
+        from_y = from_cp['y'] + cp_radius(from_cp) * math.sin(theta)
+        to_x = to_cp['x'] - cp_radius(to_cp) * math.cos(theta)
+        to_y = to_cp['y'] - cp_radius(to_cp) * math.sin(theta)
+
+        cp_draw.line((from_x, from_y, to_x, to_y), fill=from_cp['color_line'], width=cp_lines_width_px)
+
+    for i, cp in enumerate(control_points):
+        if cp['kind'] == 'skip':
+            continue
+
+        x, y = cp['x'], cp['y']
+
+        # middle dot
+        if cp['kind'] != 'point':
+          cp_draw.ellipse(
+              (x - cp_dot_size_px, y - cp_dot_size_px, x + cp_dot_size_px, y + cp_dot_size_px),
+              fill=cp['color'])
+        
+        if cp['connect_next']:
+            draw_line(cp, next_cp(i))
+
+        if cp['kind'] == 'triangle':
+            draw_triangle_cp(x, y, cp['color'])
+        elif cp['kind'] == 'circle':
+            draw_circle_cp(x, y, cp['color'])
+        elif cp['kind'] == 'dot':
+            pass
+        else:
+            logger.warning(f'Unknown control point kind: {cp["kind"]}')
+
+        cp_draw.text((x + cp_size_px, y + cp_size_px), cp['name'], fill=cp['color'], align='center', anchor='lt', font=cp_font)
+
+    # Downsample the control points image
+    cp_img = cp_img.resize(map_img.size)
+
+    # Draw the control points on the map
+    map_img.paste(cp_img, (0, 0), cp_img)
+
+
 def draw_markings(map_img, bbox, naslov1, naslov2, dodatno, slikal, slikad, epsg, edge_wgs84, target_scale, real_to_map_tr):
     map_draw = ImageDraw.Draw(map_img)
     
@@ -512,7 +628,7 @@ def draw_markings(map_img, bbox, naslov1, naslov2, dodatno, slikal, slikad, epsg
     map_info_txt = [
         f'Koord. sistem: {get_coord_system_name()}',
         f'Merilo: 1:{int(target_scale)}',
-        f'Ekvidistanca: 10m',
+        f'Ekvidistanca: 20m',
     ][::-1]
     
     map_info_p0 = [scale_line_p1[0] + 10, scale_line_p1[1]]
@@ -630,6 +746,11 @@ def create_map(configuration):
     slikal = configuration['slikal']
     slikad = configuration['slikad']
 
+    # Control points
+    control_points = configuration['control_points']
+
+    logger.info(control_points)
+
     # Raster layer
     raster_folder = configuration['raster_folder']
 
@@ -645,13 +766,17 @@ def create_map(configuration):
 
     if os.path.exists(output_file):
         logger.info(f'Map exists (nothing to do). - ({output_file})')
-        return
+        # return
+        logger.warning(f'DEBUG: Overwriting existing map. - ({output_file})')
     
     os.makedirs(os.path.dirname(output_file), exist_ok=True)
 
     map_img, grid_img, map_to_world_tr, grid_to_world_tr, real_to_map_tr, map_to_grid = get_grid_and_map((map_size_w_m, map_size_h_m), (map_w, map_s, map_e, map_n), raster_folder)
     
     border_bottom = draw_grid(map_img, grid_img, map_to_world_tr, grid_to_world_tr, real_to_map_tr, epsg, edge_wgs84, map_to_grid)
+
+    if control_points:
+        draw_control_points(map_img, map_to_world_tr, json.loads(control_points))
 
     markings_bbox = (
         GRID_MARGIN_M[3],
@@ -695,8 +820,9 @@ def main():
         logger.error('Usage: python create_map.py <base64_configuration>')
         # exit(1)
         logger.warning('Using default configuration')
-        sys.argv.append('eyJtYXBfc2l6ZV93X20iOjAuMjk3LCJtYXBfc2l6ZV9oX20iOjAuMjEsIm1hcF93Ijo0NDcxMzYsIm1hcF9zIjo3MDg4MywibWFwX2UiOjQ1Mzg1MSwibWFwX24iOjc1MzcwLCJ0YXJnZXRfc2NhbGUiOjI1MDAwLCJuYXNsb3YxIjoiS2FydGEgemEgb3JpZW50YWNpam8iLCJuYXNsb3YyIjoiIiwiZG9kYXRubyI6Ikl6ZGVsYWwgUkrFoCB6YSBwb3RyZWJlIG9yaWVudGFjaWplLiBLYXJ0YSBuaSBiaWxhIHJlYW1idWxpcmFuYS4iLCJlcHNnIjoiRVBTRzozNzk0IiwiZWRnZV93Z3M4NCI6dHJ1ZSwic2xpa2FsIjoiIiwic2xpa2FkIjoiIiwicmFzdGVyX2ZvbGRlciI6IkM6XFxVc2Vyc1xcTGVuYXJ0XFxEZXNrdG9wXFxEVEs1MFxccmVzIiwib3V0cHV0X2ZpbGUiOiJDOlxcVXNlcnNcXExlbmFydFxcQXBwRGF0YVxcTG9jYWxcXFRlbXAvdG9wb2R0ay04MjU4NGE5NTEzOTgzYzA1M2ViNGZkMjg3ZWIzNzA5NS5wZGYifQ==')
-    
+        sys.argv.append('eyJyZXF1ZXN0X3R5cGUiOiJjcmVhdGVfbWFwIiwibWFwX3NpemVfd19tIjowLjI5NywibWFwX3NpemVfaF9tIjowLjIxLCJtYXBfdyI6NDU3MTQ0LCJtYXBfcyI6NTk5MjIsIm1hcF9lIjo0NjM4NTksIm1hcF9uIjo2NDQxMCwidGFyZ2V0X3NjYWxlIjoyNTAwMCwibmFzbG92MSI6IkxvxaFrYSBEb2xpbmEiLCJuYXNsb3YyIjoiS2FydGEgemEgb3JpZW50YWNpam8iLCJkb2RhdG5vIjoiSXpkZWxhbCBSSsWgIHphIHBvdHJlYmUgb3JpZW50YWNpamUuIEthcnRhIG5pIGJpbGEgcmVhbWJ1bGlyYW5hLiIsImVwc2ciOiJFUFNHOjM3OTQiLCJlZGdlX3dnczg0Ijp0cnVlLCJjb250cm9sX3BvaW50cyI6IntcclxuICBcImNwc1wiOiBbXHJcbiAgICB7XHJcbiAgICAgIFwiblwiOiA2MTkyNS4zNzUyMzc3OTc1NCxcclxuICAgICAgXCJlXCI6IDQ2MTUzMy4zMzMzNzQwMjM0NCxcclxuICAgICAgXCJuYW1lXCI6IG51bGwsXHJcbiAgICAgIFwia2luZFwiOiBcImNpcmNsZVwiLFxyXG4gICAgICBcImNvbG9yXCI6IFwiI2ZmMDAwMFwiLFxyXG4gICAgICBcImNvbG9yX2xpbmVcIjogXCIjZmYwMDAwXCIsXHJcbiAgICAgIFwiY29ubmVjdF9uZXh0XCI6IHRydWVcclxuICAgIH0sXHJcbiAgICB7XHJcbiAgICAgIFwiblwiOiA2MTg0NS4zNTMxNjEzOTQ2MjUsXHJcbiAgICAgIFwiZVwiOiA0NjA3MTcuMzMzMzc0MDIzNDQsXHJcbiAgICAgIFwibmFtZVwiOiBudWxsLFxyXG4gICAgICBcImtpbmRcIjogXCJjaXJjbGVcIixcclxuICAgICAgXCJjb2xvclwiOiBcIiNmZjAwMDBcIixcclxuICAgICAgXCJjb2xvcl9saW5lXCI6IFwiI2ZmMDAwMFwiLFxyXG4gICAgICBcImNvbm5lY3RfbmV4dFwiOiB0cnVlXHJcbiAgICB9LFxyXG4gICAge1xyXG4gICAgICBcIm5cIjogNjE5MjUuMzc1MjM3Nzk3NTQsXHJcbiAgICAgIFwiZVwiOiA0NTk1NzMuMzMzMzc0MDIzNDQsXHJcbiAgICAgIFwibmFtZVwiOiBudWxsLFxyXG4gICAgICBcImtpbmRcIjogXCJjaXJjbGVcIixcclxuICAgICAgXCJjb2xvclwiOiBcIiNmZjAwMDBcIixcclxuICAgICAgXCJjb2xvcl9saW5lXCI6IFwiI2ZmMDAwMFwiLFxyXG4gICAgICBcImNvbm5lY3RfbmV4dFwiOiB0cnVlXHJcbiAgICB9LFxyXG4gICAge1xyXG4gICAgICBcIm5cIjogNjI0NTMuNTIwOTQyMDU2NzcsXHJcbiAgICAgIFwiZVwiOiA0NTkyNTMuMzMzMzc0MDIzNDQsXHJcbiAgICAgIFwibmFtZVwiOiBudWxsLFxyXG4gICAgICBcImtpbmRcIjogXCJjaXJjbGVcIixcclxuICAgICAgXCJjb2xvclwiOiBcIiNmZjAwMDBcIixcclxuICAgICAgXCJjb2xvcl9saW5lXCI6IFwiI2ZmMDAwMFwiLFxyXG4gICAgICBcImNvbm5lY3RfbmV4dFwiOiB0cnVlXHJcbiAgICB9LFxyXG4gICAge1xyXG4gICAgICBcIm5cIjogNjM3NjUuODgyOTk1MDY0NTYsXHJcbiAgICAgIFwiZVwiOiA0NTk5NzMuMzMzMzc0MDIzNDQsXHJcbiAgICAgIFwibmFtZVwiOiBudWxsLFxyXG4gICAgICBcImtpbmRcIjogXCJjaXJjbGVcIixcclxuICAgICAgXCJjb2xvclwiOiBcIiNmZjAwMDBcIixcclxuICAgICAgXCJjb2xvcl9saW5lXCI6IFwiI2ZmMDAwMFwiLFxyXG4gICAgICBcImNvbm5lY3RfbmV4dFwiOiB0cnVlXHJcbiAgICB9LFxyXG4gICAge1xyXG4gICAgICBcIm5cIjogNjM2NDUuODQ5ODgwNDYwMTg0LFxyXG4gICAgICBcImVcIjogNDYxMjY5LjMzMzM3NDAyMzQ0LFxyXG4gICAgICBcIm5hbWVcIjogbnVsbCxcclxuICAgICAgXCJraW5kXCI6IFwiY2lyY2xlXCIsXHJcbiAgICAgIFwiY29sb3JcIjogXCIjZmYwMDAwXCIsXHJcbiAgICAgIFwiY29sb3JfbGluZVwiOiBcIiNmZjAwMDBcIixcclxuICAgICAgXCJjb25uZWN0X25leHRcIjogdHJ1ZVxyXG4gICAgfSxcclxuICAgIHtcclxuICAgICAgXCJuXCI6IDYzMTA5LjcwMTk2ODU2MDY2NSxcclxuICAgICAgXCJlXCI6IDQ2MTU2NS4zMzMzNzQwMjM0NCxcclxuICAgICAgXCJuYW1lXCI6IG51bGwsXHJcbiAgICAgIFwia2luZFwiOiBcImNpcmNsZVwiLFxyXG4gICAgICBcImNvbG9yXCI6IFwiI2ZmMDAwMFwiLFxyXG4gICAgICBcImNvbG9yX2xpbmVcIjogXCIjZmYwMDAwXCIsXHJcbiAgICAgIFwiY29ubmVjdF9uZXh0XCI6IHRydWVcclxuICAgIH1cclxuICBdXHJcbn0iLCJyYXN0ZXJfZm9sZGVyIjoiQzpcXFVzZXJzXFxMZW5hcnRcXERlc2t0b3BcXERUSzUwXFxyZXMiLCJ0ZW1wX2ZvbGRlciI6IkM6XFxVc2Vyc1xcTGVuYXJ0XFxEZXNrdG9wXFx0b3BvZHRrXFwuY3JlYXRlX21hcF9jYWNoZSIsInNsaWthbCI6IiIsInNsaWthZCI6IiIsIm1hcF9pZCI6IjJjODFjMWZjNDg2YzYwMTg4NWUxZjcwNzU3MDcxMGQ2In0===')
+    else:
+        logger.info(f'Configuration: {sys.argv[1]}')
 
     configuration = json.loads(base64.b64decode(sys.argv[1]).decode('utf-8'))
 
@@ -712,4 +838,4 @@ if __name__ == '__main__':
     main()
     exit(0)
 
-raise NotImplementedError('This script is meant to be run as a standalone script.')
+# raise NotImplementedError('This script is meant to be run as a standalone script.')

@@ -19,28 +19,28 @@
 	const dispatch = createEventDispatcher();
 
 	onMount(async () => {
-		L = await import('leaflet');
+	  L = await import('leaflet');
 
-		const GestureHandling = await import('leaflet-gesture-handling');
-		L.Map.addInitHook('addHandler', 'gestureHandling', GestureHandling.GestureHandling);
+	  const GestureHandling = await import('leaflet-gesture-handling');
+	  L.Map.addInitHook('addHandler', 'gestureHandling', GestureHandling.GestureHandling);
 
-		L.Icon.Default.prototype.options.iconUrl = L_marker_icon;
-		L.Icon.Default.prototype.options.iconRetinaUrl = L_marker_icon_2x;
-		L.Icon.Default.prototype.options.shadowUrl = L_marker_shadow;
-		L.Icon.Default.imagePath = '';
+	  L.Icon.Default.prototype.options.iconUrl = L_marker_icon;
+	  L.Icon.Default.prototype.options.iconRetinaUrl = L_marker_icon_2x;
+	  L.Icon.Default.prototype.options.shadowUrl = L_marker_shadow;
+	  L.Icon.Default.imagePath = '';
 
-		let options = {
-			...map_options(L),
-			gestureHandling: true
-		};
+	  let options = {
+	    ...map_options(L),
+	    gestureHandling: true
+	  };
 
-		map = new L.Map(map_html, options);
+	  map = new L.Map(map_html, options);
 
-		dispatch('ready');
+	  dispatch('ready');
 	});
 
 	onDestroy(() => {
-		if (map) map.remove();
+	  if (map) map.remove();
 	});
 </script>
 
