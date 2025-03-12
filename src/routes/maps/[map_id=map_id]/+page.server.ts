@@ -15,5 +15,6 @@ export const load = (async ({ params }) => {
 
   const map_pdf = await fs.promises.readFile(`${map_path}/map.pdf`);
   const map_config = JSON.parse((await fs.promises.readFile(`${map_path}/conf.json`)).toString()) as CreatedMapConf;
-  return { map_pdf: [...map_pdf], map_config };
+  const map_cp_report = fs.existsSync(`${map_path}/cp_report.pdf`) ? await fs.promises.readFile(`${map_path}/cp_report.pdf`) : null;
+  return { map_pdf: [...map_pdf], map_config, map_cp_report: map_cp_report ? [...map_cp_report] : null };
 }) satisfies PageServerLoad;

@@ -20,8 +20,18 @@ import logging
 
 ### STATIC CONFIGURATION ###
 
+# General settings
 TARGET_DPI = 318
+PDF_AUTHOR = 'Topograf - topograf.scuke.si'
+
+# Map settings
 GRID_MARGIN_M = [0.011, 0.0141, 0.0195, 0.0143] # Margin around the A4 paper in meters [top, right, bottom, left]
+
+# Control point reporting settings
+CP_REPORT_PAGE_SIZE_M = (0.21, 0.297) # A4
+CP_REPORT_PAGE_MARGIN_M = (0.012, 0.017, 0.012, 0.017) # Margin around the A4 paper in meters [top, right, bottom, left]
+CP_REPORT_GRID_SIZE = (2, 6) # 2x6 grid
+CP_REPORT_PREVIEW_SIZE_RADIUS_M = 300 # Radius of the preview image in meters
 
 ### /STATIC CONFIGURATION ###
 
@@ -121,6 +131,17 @@ def get_raster_map(raster_folder: str, bounds: tuple[float]):
 
     logger.info(f'Created raster mosaic. - ({bounds_hash} - {mosaic.shape})')
     return mosaic
+
+# Convert decimal degrees to DD°MM'SS" format
+def deg_to_deg_min_sec(deg, precision=0):
+    d = int(deg)
+    m = int((deg - d) * 60)
+    if precision > 0:
+        s = (deg - d - m / 60) * 3600
+        s = round(s, precision)
+    else:
+      s = int((deg - d - m / 60) * 3600)
+    return f'{d}°{m:02}\'{s:02}"'
 
 def get_grid_and_map(map_size_m: tuple[float], map_bounds: tuple[float], raster_folder: str):
     """
@@ -313,13 +334,6 @@ def draw_grid(map_img, grid_img, map_to_world_tr, grid_to_world_tr, real_to_map_
         map_draw.line((wgs_border[0], grid_border[1], wgs_border[2], grid_border[1]), fill='black', width=2)
         map_draw.line((wgs_border[0], grid_border[3], wgs_border[2], grid_border[3]), fill='black', width=2)
 
-        # Convert decimal degrees to DD°MM'SS" format
-        def deg_to_deg_min_sec(deg):
-            d = int(deg)
-            m = int((deg - d) * 60)
-            s = int((deg - d - m / 60) * 3600)
-            return f'{d}°{m:02}\'{s:02}"'
-
         def a4_draw_text_rotate(xy, xof, yof, text, angle, font):
             # Draw text with rotation
             size = font.getbbox(text)
@@ -390,6 +404,16 @@ def draw_grid(map_img, grid_img, map_to_world_tr, grid_to_world_tr, real_to_map_
         logger.info('Skipping WGS84 edge drawing.')
         return real_to_map_tr.xy(0, grid_border[3] + border_bottom_px)[0]
 
+def cp_name(i, cp, cp_count):
+  if cp['name']:
+      return cp['name']
+  if i == 0:
+      return 'START'
+  if i == cp_count - 1 and cp['connect_next'] == False:
+      return 'END'
+          
+  return f'KT{i}'
+
 def draw_control_points(map_img, map_to_world_tr, control_point_settings):
     cp_size_real = control_point_settings['cp_size']
     control_points = control_point_settings['cps']
@@ -413,21 +437,10 @@ def draw_control_points(map_img, map_to_world_tr, control_point_settings):
     cp_dot_size_px = m_to_px(0.0005) # 0.5mm size 
 
     cp_count = len(control_points)
-
-    
-    def cp_name(i, cp):
-        if cp['name']:
-            return cp['name']
-        if i == 0:
-            return 'START'
-        if i == cp_count - 1 and cp['connect_next'] == False:
-            return 'END'
-                
-        return f'KT{i}'
     
     # Recalculate the names and positions of the control points
     for i, cp in enumerate(control_points):
-        cp['name'] = cp_name(i, cp)
+        cp['name'] = cp_name(i, cp, cp_count)
         x, y = map_to_world_tr.colrow(cp['e'], cp['n'])
         x, y = x * map_supersample, y * map_supersample
         cp['x'] = x
@@ -719,6 +732,113 @@ def get_preview_image(bounds, epsg, raster_folder):
 
     return grid_img
 
+def create_control_point_report(control_point_settings, raster_folder, title, output_file):
+    cps = control_point_settings['cps']
+    cp_count = len(cps)
+    if cp_count == 0:
+        logger.info('No control points to draw.')
+        return
+
+    # Compute the grid size
+    cp_grid_size_m = (
+      CP_REPORT_PAGE_SIZE_M[0] - CP_REPORT_PAGE_MARGIN_M[0] - CP_REPORT_PAGE_MARGIN_M[2],
+      CP_REPORT_PAGE_SIZE_M[1] - CP_REPORT_PAGE_MARGIN_M[1] - CP_REPORT_PAGE_MARGIN_M[3]
+    )
+    cp_report_page_size_px = (
+        int(CP_REPORT_PAGE_SIZE_M[0] * TARGET_DPI / 0.0254),
+        int(CP_REPORT_PAGE_SIZE_M[1] * TARGET_DPI / 0.0254)
+    )
+    cp_grid_cell_size_m = (
+        cp_grid_size_m[0] / CP_REPORT_GRID_SIZE[0],
+        cp_grid_size_m[1] / CP_REPORT_GRID_SIZE[1]
+    )
+    cp_grid_cell_size_px = (
+        int(cp_grid_cell_size_m[0] * TARGET_DPI / 0.0254),
+        int(cp_grid_cell_size_m[1] * TARGET_DPI / 0.0254)
+    )
+    cp_grid_cells_per_page = CP_REPORT_GRID_SIZE[0] * CP_REPORT_GRID_SIZE[1]
+    cp_preview_size_px = (
+        min(cp_grid_cell_size_px) - 10,
+        min(cp_grid_cell_size_px) - 10
+    )
+
+    def cp_index_to_page(i):
+        return i // cp_grid_cells_per_page
+
+    def cp_index_to_pos(i):
+        i = i % cp_grid_cells_per_page
+        return (
+            (CP_REPORT_PAGE_MARGIN_M[0] + (i % CP_REPORT_GRID_SIZE[0]) * cp_grid_cell_size_m[0]) * TARGET_DPI / 0.0254,
+            (CP_REPORT_PAGE_MARGIN_M[1] + (i // CP_REPORT_GRID_SIZE[0]) * cp_grid_cell_size_m[1]) * TARGET_DPI / 0.0254
+        )
+    
+    pages: list[Image.Image] = []
+    draws: list[ImageDraw.ImageDraw] = []
+    for _ in range(math.ceil(len(cps) / cp_grid_cells_per_page)):
+        pages.append(Image.new('RGB', cp_report_page_size_px, 'white'))
+        draws.append(ImageDraw.Draw(pages[-1]))
+
+    cp_font = ImageFont.truetype('times.ttf', 60)
+    cs_from = pyproj.CRS.from_epsg(3794)
+    cs_to = pyproj.CRS.from_epsg(4326)
+    cs_from_to_tr = pyproj.Transformer.from_crs(cs_from, cs_to)
+    txt_line_h_px = cp_font.getbbox('0')[3] + 5
+
+    def draw_cp_report(i, cp, draw: ImageDraw.ImageDraw, pos):
+      # Create square for cp report
+      draw.rectangle(
+          (pos[0], pos[1], pos[0] + cp_grid_cell_size_px[0], pos[1] + cp_grid_cell_size_px[1]),
+          outline='black', width=2
+      )
+
+      # Convert to WGS84
+      cp_wgs = cs_from_to_tr.transform(cp['e'], cp['n'])
+      cp_wgs_formated = [ deg_to_deg_min_sec(c, 2) for c in cp_wgs ]
+
+      cp_text = [
+          f'KT: {cp_name(i, cp, cp_count)}',
+          f'N: {cp["n"]:.3f}',
+          f'E: {cp["e"]:.3f}',
+          f'φ: {cp_wgs_formated[0]}',
+          f'λ: {cp_wgs_formated[1]}',
+          f'φ: {cp_wgs[0]:.6f}',
+          f'λ: {cp_wgs[1]:.6f}'
+      ]
+
+      # Draw text
+      for txti, txt in enumerate(cp_text):
+          draw.text((pos[0] + 5, pos[1] + 5 + txti * txt_line_h_px), txt, fill='black', font=cp_font)
+
+      # Get the preview image
+      cp_preview_bounds = (
+          cp['e'] - CP_REPORT_PREVIEW_SIZE_RADIUS_M,
+          cp['n'] - CP_REPORT_PREVIEW_SIZE_RADIUS_M,
+          cp['e'] + CP_REPORT_PREVIEW_SIZE_RADIUS_M,
+          cp['n'] + CP_REPORT_PREVIEW_SIZE_RADIUS_M
+      )
+      cp_preview_raster = get_raster_map(raster_folder, cp_preview_bounds)
+      cp_preview_img = Image.fromarray(rasterio.plot.reshape_as_image(cp_preview_raster), 'RGB')
+      cp_preview_img = cp_preview_img.resize(cp_preview_size_px)
+
+      # Draw centering cross
+      cp_draw = ImageDraw.Draw(cp_preview_img, 'RGBA')
+      cp_draw.line((cp_preview_size_px[0] // 2, 0, cp_preview_size_px[0] // 2, cp_preview_size_px[1]), fill='#f00b', width=3)
+      cp_draw.line((0, cp_preview_size_px[1] // 2, cp_preview_size_px[0], cp_preview_size_px[1] // 2), fill='#f00b', width=3)
+
+      # Paste the preview image
+      pages[cp_index_to_page(i)].paste(cp_preview_img, (int(pos[0] + cp_grid_cell_size_px[0] - cp_preview_size_px[0] - 5), int(pos[1] + 5)))
+    
+    for i, cp in enumerate(cps):
+        page = cp_index_to_page(i)
+        pos = cp_index_to_pos(i)
+        draw_cp_report(i, cp, draws[page], pos)
+
+    title_pos = cp_index_to_pos(1)
+    title_pos = (title_pos[0], title_pos[1] - 10)
+    draws[0].text(title_pos, title, fill='black', font=cp_font, anchor='mb')
+
+    pages[0].save(output_file, save_all=True, append_images=pages[1:], dpi=(TARGET_DPI, TARGET_DPI), author=PDF_AUTHOR)
+
 def create_map(configuration):
     # Unpack the configuration
     # Map index
@@ -761,6 +881,7 @@ def create_map(configuration):
 
     output_file = os.path.join(get_cache_dir(f'maps/{map_id}'), 'map.pdf')
     output_conf = os.path.join(get_cache_dir(f'maps/{map_id}'), 'conf.json')
+    output_cp_report = os.path.join(get_cache_dir(f'maps/{map_id}'), 'cp_report.pdf')
 
     logger.info(f'Creating map: {map_id}')
 
@@ -777,6 +898,8 @@ def create_map(configuration):
 
     if control_points:
         draw_control_points(map_img, map_to_world_tr, json.loads(control_points))
+        cp_title = f'Kontrolne točke - {naslov1} {naslov2}'
+        create_control_point_report(json.loads(control_points), raster_folder, cp_title, output_cp_report)
 
     markings_bbox = (
         GRID_MARGIN_M[3],
@@ -788,7 +911,7 @@ def create_map(configuration):
     draw_markings(map_img, markings_bbox, naslov1, naslov2, dodatno, slikal, slikad, epsg, edge_wgs84, target_scale, real_to_map_tr)
 
     logger.info(f'Saving map to: {output_file}')
-    map_img.save(output_file, dpi=(TARGET_DPI, TARGET_DPI))
+    map_img.save(output_file, dpi=(TARGET_DPI, TARGET_DPI), author=PDF_AUTHOR)
 
     configuration.pop('temp_folder')
     configuration.pop('request_type')
@@ -820,7 +943,7 @@ def main():
         logger.error('Usage: python create_map.py <base64_configuration>')
         # exit(1)
         logger.warning('Using default configuration')
-        sys.argv.append('eyJyZXF1ZXN0X3R5cGUiOiJjcmVhdGVfbWFwIiwibWFwX3NpemVfd19tIjowLjI5NywibWFwX3NpemVfaF9tIjowLjIxLCJtYXBfdyI6NDU3MTQ0LCJtYXBfcyI6NTk5MjIsIm1hcF9lIjo0NjM4NTksIm1hcF9uIjo2NDQxMCwidGFyZ2V0X3NjYWxlIjoyNTAwMCwibmFzbG92MSI6IkxvxaFrYSBEb2xpbmEiLCJuYXNsb3YyIjoiS2FydGEgemEgb3JpZW50YWNpam8iLCJkb2RhdG5vIjoiSXpkZWxhbCBSSsWgIHphIHBvdHJlYmUgb3JpZW50YWNpamUuIEthcnRhIG5pIGJpbGEgcmVhbWJ1bGlyYW5hLiIsImVwc2ciOiJFUFNHOjM3OTQiLCJlZGdlX3dnczg0Ijp0cnVlLCJjb250cm9sX3BvaW50cyI6IntcclxuICBcImNwc1wiOiBbXHJcbiAgICB7XHJcbiAgICAgIFwiblwiOiA2MTkyNS4zNzUyMzc3OTc1NCxcclxuICAgICAgXCJlXCI6IDQ2MTUzMy4zMzMzNzQwMjM0NCxcclxuICAgICAgXCJuYW1lXCI6IG51bGwsXHJcbiAgICAgIFwia2luZFwiOiBcImNpcmNsZVwiLFxyXG4gICAgICBcImNvbG9yXCI6IFwiI2ZmMDAwMFwiLFxyXG4gICAgICBcImNvbG9yX2xpbmVcIjogXCIjZmYwMDAwXCIsXHJcbiAgICAgIFwiY29ubmVjdF9uZXh0XCI6IHRydWVcclxuICAgIH0sXHJcbiAgICB7XHJcbiAgICAgIFwiblwiOiA2MTg0NS4zNTMxNjEzOTQ2MjUsXHJcbiAgICAgIFwiZVwiOiA0NjA3MTcuMzMzMzc0MDIzNDQsXHJcbiAgICAgIFwibmFtZVwiOiBudWxsLFxyXG4gICAgICBcImtpbmRcIjogXCJjaXJjbGVcIixcclxuICAgICAgXCJjb2xvclwiOiBcIiNmZjAwMDBcIixcclxuICAgICAgXCJjb2xvcl9saW5lXCI6IFwiI2ZmMDAwMFwiLFxyXG4gICAgICBcImNvbm5lY3RfbmV4dFwiOiB0cnVlXHJcbiAgICB9LFxyXG4gICAge1xyXG4gICAgICBcIm5cIjogNjE5MjUuMzc1MjM3Nzk3NTQsXHJcbiAgICAgIFwiZVwiOiA0NTk1NzMuMzMzMzc0MDIzNDQsXHJcbiAgICAgIFwibmFtZVwiOiBudWxsLFxyXG4gICAgICBcImtpbmRcIjogXCJjaXJjbGVcIixcclxuICAgICAgXCJjb2xvclwiOiBcIiNmZjAwMDBcIixcclxuICAgICAgXCJjb2xvcl9saW5lXCI6IFwiI2ZmMDAwMFwiLFxyXG4gICAgICBcImNvbm5lY3RfbmV4dFwiOiB0cnVlXHJcbiAgICB9LFxyXG4gICAge1xyXG4gICAgICBcIm5cIjogNjI0NTMuNTIwOTQyMDU2NzcsXHJcbiAgICAgIFwiZVwiOiA0NTkyNTMuMzMzMzc0MDIzNDQsXHJcbiAgICAgIFwibmFtZVwiOiBudWxsLFxyXG4gICAgICBcImtpbmRcIjogXCJjaXJjbGVcIixcclxuICAgICAgXCJjb2xvclwiOiBcIiNmZjAwMDBcIixcclxuICAgICAgXCJjb2xvcl9saW5lXCI6IFwiI2ZmMDAwMFwiLFxyXG4gICAgICBcImNvbm5lY3RfbmV4dFwiOiB0cnVlXHJcbiAgICB9LFxyXG4gICAge1xyXG4gICAgICBcIm5cIjogNjM3NjUuODgyOTk1MDY0NTYsXHJcbiAgICAgIFwiZVwiOiA0NTk5NzMuMzMzMzc0MDIzNDQsXHJcbiAgICAgIFwibmFtZVwiOiBudWxsLFxyXG4gICAgICBcImtpbmRcIjogXCJjaXJjbGVcIixcclxuICAgICAgXCJjb2xvclwiOiBcIiNmZjAwMDBcIixcclxuICAgICAgXCJjb2xvcl9saW5lXCI6IFwiI2ZmMDAwMFwiLFxyXG4gICAgICBcImNvbm5lY3RfbmV4dFwiOiB0cnVlXHJcbiAgICB9LFxyXG4gICAge1xyXG4gICAgICBcIm5cIjogNjM2NDUuODQ5ODgwNDYwMTg0LFxyXG4gICAgICBcImVcIjogNDYxMjY5LjMzMzM3NDAyMzQ0LFxyXG4gICAgICBcIm5hbWVcIjogbnVsbCxcclxuICAgICAgXCJraW5kXCI6IFwiY2lyY2xlXCIsXHJcbiAgICAgIFwiY29sb3JcIjogXCIjZmYwMDAwXCIsXHJcbiAgICAgIFwiY29sb3JfbGluZVwiOiBcIiNmZjAwMDBcIixcclxuICAgICAgXCJjb25uZWN0X25leHRcIjogdHJ1ZVxyXG4gICAgfSxcclxuICAgIHtcclxuICAgICAgXCJuXCI6IDYzMTA5LjcwMTk2ODU2MDY2NSxcclxuICAgICAgXCJlXCI6IDQ2MTU2NS4zMzMzNzQwMjM0NCxcclxuICAgICAgXCJuYW1lXCI6IG51bGwsXHJcbiAgICAgIFwia2luZFwiOiBcImNpcmNsZVwiLFxyXG4gICAgICBcImNvbG9yXCI6IFwiI2ZmMDAwMFwiLFxyXG4gICAgICBcImNvbG9yX2xpbmVcIjogXCIjZmYwMDAwXCIsXHJcbiAgICAgIFwiY29ubmVjdF9uZXh0XCI6IHRydWVcclxuICAgIH1cclxuICBdXHJcbn0iLCJyYXN0ZXJfZm9sZGVyIjoiQzpcXFVzZXJzXFxMZW5hcnRcXERlc2t0b3BcXERUSzUwXFxyZXMiLCJ0ZW1wX2ZvbGRlciI6IkM6XFxVc2Vyc1xcTGVuYXJ0XFxEZXNrdG9wXFx0b3BvZHRrXFwuY3JlYXRlX21hcF9jYWNoZSIsInNsaWthbCI6IiIsInNsaWthZCI6IiIsIm1hcF9pZCI6IjJjODFjMWZjNDg2YzYwMTg4NWUxZjcwNzU3MDcxMGQ2In0===')
+        sys.argv.append('eyJyZXF1ZXN0X3R5cGUiOiJjcmVhdGVfbWFwIiwibWFwX3NpemVfd19tIjowLjI5NywibWFwX3NpemVfaF9tIjowLjIxLCJtYXBfdyI6NDQ3MTM2LCJtYXBfcyI6NzA4ODMsIm1hcF9lIjo0NTM4NTEsIm1hcF9uIjo3NTM3MCwidGFyZ2V0X3NjYWxlIjoyNTAwMCwibmFzbG92MSI6IkNlcmtuaWNhIiwibmFzbG92MiI6IkthcnRhIHphIG9yaWVudGFjaWpvIiwiZG9kYXRubyI6Ikl6ZGVsYWwgUkrFoCB6YSBwb3RyZWJlIG9yaWVudGFjaWplLiBLYXJ0YSBuaSBiaWxhIHJlYW1idWxpcmFuYS4iLCJlcHNnIjoiRVBTRzozNzk0IiwiZWRnZV93Z3M4NCI6dHJ1ZSwiY29udHJvbF9wb2ludHMiOiJ7XCJjcF9zaXplXCI6MC4wMDMsXCJjcHNcIjpbe1wiZVwiOjQ0OTI5My4zMzMzNzQwMjM0NCxcIm5cIjo3NDA5Ni41MzQ5MDM0Mjc5NSxcIm5hbWVcIjpcIlwiLFwia2luZFwiOlwidHJpYW5nbGVcIixcImNvbG9yXCI6XCIjZmYwMDAwXCIsXCJjb2xvcl9saW5lXCI6XCIjZmYwMDAwXCIsXCJjb25uZWN0X25leHRcIjp0cnVlfSx7XCJlXCI6NDQ5OTQ5LjMzMzM3NDAyMzQ0LFwiblwiOjc0MTQ0LjU0ODE0OTI2OTcsXCJuYW1lXCI6XCJcIixcImtpbmRcIjpcImNpcmNsZVwiLFwiY29sb3JcIjpcIiNmZjAwMDBcIixcImNvbG9yX2xpbmVcIjpcIiNmZjAwMDBcIixcImNvbm5lY3RfbmV4dFwiOnRydWV9LHtcImVcIjo0NTA1OTcuMzMzMzc0MDIzNDQsXCJuXCI6NzQxNjAuNTUyNTY0NTUwMjgsXCJuYW1lXCI6XCJcIixcImtpbmRcIjpcImNpcmNsZVwiLFwiY29sb3JcIjpcIiNmZjAwMDBcIixcImNvbG9yX2xpbmVcIjpcIiNmZjAwMDBcIixcImNvbm5lY3RfbmV4dFwiOnRydWV9LHtcImVcIjo0NTExMzMuMzMzMzc0MDIzNDQsXCJuXCI6NzQyMTYuNTY4MDE4MDMyMzMsXCJuYW1lXCI6XCJcIixcImtpbmRcIjpcImNpcmNsZVwiLFwiY29sb3JcIjpcIiNmZjAwMDBcIixcImNvbG9yX2xpbmVcIjpcIiNmZjAwMDBcIixcImNvbm5lY3RfbmV4dFwiOnRydWV9LHtcImVcIjo0NTE2NjEuMzMzMzc0MDIzNDQsXCJuXCI6NzQyNDAuNTc0NjQwOTUzMTksXCJuYW1lXCI6XCJcIixcImtpbmRcIjpcImNpcmNsZVwiLFwiY29sb3JcIjpcIiNmZjAwMDBcIixcImNvbG9yX2xpbmVcIjpcIiNmZjAwMDBcIixcImNvbm5lY3RfbmV4dFwiOnRydWV9LHtcImVcIjo0NTIxNDkuMzMzMzc0MDIzNDQsXCJuXCI6NzQyNDAuNTc0NjQwOTUzMTksXCJuYW1lXCI6XCJcIixcImtpbmRcIjpcImNpcmNsZVwiLFwiY29sb3JcIjpcIiNmZjAwMDBcIixcImNvbG9yX2xpbmVcIjpcIiNmZjAwMDBcIixcImNvbm5lY3RfbmV4dFwiOnRydWV9LHtcImVcIjo0NDkzMDEuMzMzMzc0MDIzNDQsXCJuXCI6NzM3MzYuNDM1NTU5NjE0ODQsXCJuYW1lXCI6XCJcIixcImtpbmRcIjpcImNpcmNsZVwiLFwiY29sb3JcIjpcIiNmZjAwMDBcIixcImNvbG9yX2xpbmVcIjpcIiNmZjAwMDBcIixcImNvbm5lY3RfbmV4dFwiOnRydWV9LHtcImVcIjo0NDk5NzMuMzMzMzc0MDIzNDQsXCJuXCI6NzM4MDAuNDUzMjIwNzM3MTcsXCJuYW1lXCI6XCJcIixcImtpbmRcIjpcImNpcmNsZVwiLFwiY29sb3JcIjpcIiNmZjAwMDBcIixcImNvbG9yX2xpbmVcIjpcIiNmZjAwMDBcIixcImNvbm5lY3RfbmV4dFwiOnRydWV9LHtcImVcIjo0NTA2MDUuMzMzMzc0MDIzNDQsXCJuXCI6NzM4OTYuNDc5NzEyNDIwNjcsXCJuYW1lXCI6XCJcIixcImtpbmRcIjpcImNpcmNsZVwiLFwiY29sb3JcIjpcIiNmZjAwMDBcIixcImNvbG9yX2xpbmVcIjpcIiNmZjAwMDBcIixcImNvbm5lY3RfbmV4dFwiOnRydWV9LHtcImVcIjo0NTExODEuMzMzMzc0MDIzNDQsXCJuXCI6NzM4NTYuNDY4Njc0MjE5MjEsXCJuYW1lXCI6XCJcIixcImtpbmRcIjpcImNpcmNsZVwiLFwiY29sb3JcIjpcIiNmZjAwMDBcIixcImNvbG9yX2xpbmVcIjpcIiNmZjAwMDBcIixcImNvbm5lY3RfbmV4dFwiOnRydWV9LHtcImVcIjo0NTE2ODUuMzMzMzc0MDIzNDQsXCJuXCI6NzM5MjAuNDg2MzM1MzQxNTQsXCJuYW1lXCI6XCJcIixcImtpbmRcIjpcImNpcmNsZVwiLFwiY29sb3JcIjpcIiNmZjAwMDBcIixcImNvbG9yX2xpbmVcIjpcIiNmZjAwMDBcIixcImNvbm5lY3RfbmV4dFwiOnRydWV9LHtcImVcIjo0NTIyMjEuMzMzMzc0MDIzNDQsXCJuXCI6NzQwMDAuNTA4NDExNzQ0NDUsXCJuYW1lXCI6XCJcIixcImtpbmRcIjpcImNpcmNsZVwiLFwiY29sb3JcIjpcIiNmZjAwMDBcIixcImNvbG9yX2xpbmVcIjpcIiNmZjAwMDBcIixcImNvbm5lY3RfbmV4dFwiOnRydWV9LHtcImVcIjo0NDkzODkuMzMzMzc0MDIzNDQsXCJuXCI6NzMzODcuMDA1Nzg1Mjg3NDUsXCJuYW1lXCI6XCJcIixcImtpbmRcIjpcImNpcmNsZVwiLFwiY29sb3JcIjpcIiNmZjAwMDBcIixcImNvbG9yX2xpbmVcIjpcIiNmZjAwMDBcIixcImNvbm5lY3RfbmV4dFwiOnRydWV9XSxcImJvdW5kc1wiOls0NDcxMzYsNzA4ODMsNDUzODUxLDc1MzcwXX0iLCJyYXN0ZXJfZm9sZGVyIjoiQzpcXFVzZXJzXFxMZW5hcnRcXERlc2t0b3BcXERUSzUwXFxyZXMiLCJ0ZW1wX2ZvbGRlciI6IkM6XFxVc2Vyc1xcTGVuYXJ0XFxEZXNrdG9wXFx0b3BvZHRrXFwuY3JlYXRlX21hcF9jYWNoZSIsInNsaWthbCI6IiIsInNsaWthZCI6IiIsIm1hcF9pZCI6ImIwY2U4OGVhZDYyOWJhNjFiYmFhOTc4YjQ3MTg0NjViIn0=')
     else:
         logger.info(f'Configuration: {sys.argv[1]}')
 
