@@ -736,14 +736,14 @@ def draw_markings(map_img, bbox, naslov1, naslov2, dodatno, slikal, slikad, epsg
         'dtk25': 'Državna topografska karta 1:25.000',
         'otm': 'OpenTopoMap',
         'osm': 'OpenStreetMap',
-        '': ''
+        '': 'Topograf'
     }[raster_source]
     vir_attr = {
         'dtk50': 'Geodetska uprava RS, 2023',
         'dtk25': 'Geodetska uprava RS, 1996',
         'otm': 'OpenTopoMap (CC-BY-SA)',
         'osm': 'OpenStreetMap (CC-BY-SA)',
-        '': ''
+        '': 'Rod Jezerska ščuka'
     }[raster_source]
 
     map_source_txt = [
