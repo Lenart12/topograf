@@ -524,6 +524,77 @@ def draw_control_points(map_img, map_to_world_tr, control_point_settings):
     def next_cp(i):
         return control_points[(i + 1) % cp_count]
     
+    def prev_cp(i):
+        return control_points[(i - 1) % cp_count]
+    
+    def calculate_label_position(i, cp, label_distance_factor=1.5):
+        # Skip if we don't have enough points for angle calculation
+        if cp_count < 3:
+            return cp['x'], cp['y'] - cp_size_px * label_distance_factor
+        
+        cp_curr = cp
+        cp_prev = prev_cp(i)
+        cp_next = next_cp(i)
+        
+        # Calculate vectors from current CP to previous and next CPs
+        vec_to_prev = (cp_prev['x'] - cp_curr['x'], cp_prev['y'] - cp_curr['y'])
+        vec_to_next = (cp_next['x'] - cp_curr['x'], cp_next['y'] - cp_curr['y'])
+        
+        # Normalize vectors
+        prev_len = math.sqrt(vec_to_prev[0]**2 + vec_to_prev[1]**2)
+        next_len = math.sqrt(vec_to_next[0]**2 + vec_to_next[1]**2)
+        
+        if prev_len == 0 or next_len == 0:
+            return cp['x'], cp['y'] - cp_size_px * label_distance_factor
+        
+        prev_norm = (vec_to_prev[0]/prev_len, vec_to_prev[1]/prev_len)
+        next_norm = (vec_to_next[0]/next_len, vec_to_next[1]/next_len)
+        
+        # Sum the normalized vectors and negate to get the outside bisector
+        bisector_x = -(prev_norm[0] + next_norm[0])
+        bisector_y = -(prev_norm[1] + next_norm[1])
+        
+        # Normalize the bisector
+        bisector_len = math.sqrt(bisector_x**2 + bisector_y**2)
+        if bisector_len == 0:
+            # If the bisector is zero length (straight line), use perpendicular
+            bisector_x = -next_norm[1]
+            bisector_y = next_norm[0]
+            bisector_len = 1.0
+        
+        bisector_x /= bisector_len
+        bisector_y /= bisector_len
+        
+        # Calculate label position at a distance from the control point
+        label_distance = cp_size_px * label_distance_factor
+        label_x = cp['x'] + bisector_x * label_distance
+        label_y = cp['y'] + bisector_y * label_distance
+
+        angle = math.degrees(math.atan2(-bisector_y, bisector_x))
+    
+        # Determine anchor based on 8 directional segments
+        if -22.5 <= angle <= 22.5:         # East
+            anchor = 'lm'
+        elif 22.5 < angle <= 67.5:         # North-East
+            anchor = 'lb'
+        elif 67.5 < angle <= 112.5:        # North
+            anchor = 'mb'
+        elif 112.5 < angle <= 157.5:       # North-West
+            anchor = 'rb'
+        elif angle > 157.5 or angle <= -157.5:  # West
+            anchor = 'rm'
+        elif -157.5 < angle <= -112.5:     # South-West
+            anchor = 'rt'
+        elif -112.5 < angle <= -67.5:      # South
+            anchor = 'mt'
+        elif -67.5 < angle <= -22.5:       # South-East
+            anchor = 'lt'
+        else:
+          # Fallback (should not happen)
+          anchor = 'mm'
+        
+        return label_x, label_y, anchor
+    
     def draw_triangle_cp(x, y, col):
         cp_draw.polygon([
             (x, y - cp_size_px),
@@ -584,7 +655,8 @@ def draw_control_points(map_img, map_to_world_tr, control_point_settings):
         else:
             logger.warning(f'Unknown control point kind: {cp["kind"]}')
 
-        cp_draw.text((x + cp_size_px, y + cp_size_px), cp['name'], fill=cp['color'], align='center', anchor='lt', font=cp_font)
+        label_x, label_y, anchor = calculate_label_position(i, cp)
+        cp_draw.text((label_x, label_y), cp['name'], fill=cp['color'], align='center', anchor=anchor, font=cp_font)
 
     # Downsample the control points image
     cp_img = cp_img.resize(map_img.size)
@@ -907,23 +979,24 @@ def create_control_point_report(control_point_settings, raster_folder, title, ou
           draw.text((pos[0] + 5, pos[1] + 5 + txti * txt_line_h_px), txt, fill='black', font=cp_font)
 
       # Get the preview image
-      cp_preview_bounds = (
-          cp['e'] - CP_REPORT_PREVIEW_SIZE_RADIUS_M,
-          cp['n'] - CP_REPORT_PREVIEW_SIZE_RADIUS_M,
-          cp['e'] + CP_REPORT_PREVIEW_SIZE_RADIUS_M,
-          cp['n'] + CP_REPORT_PREVIEW_SIZE_RADIUS_M
-      )
-      cp_preview_raster = get_raster_map(raster_folder, cp_preview_bounds)
-      cp_preview_img = Image.fromarray(rasterio.plot.reshape_as_image(cp_preview_raster), 'RGB')
-      cp_preview_img = cp_preview_img.resize(cp_preview_size_px)
+      if raster_folder != '':
+        cp_preview_bounds = (
+            cp['e'] - CP_REPORT_PREVIEW_SIZE_RADIUS_M,
+            cp['n'] - CP_REPORT_PREVIEW_SIZE_RADIUS_M,
+            cp['e'] + CP_REPORT_PREVIEW_SIZE_RADIUS_M,
+            cp['n'] + CP_REPORT_PREVIEW_SIZE_RADIUS_M
+        )
+        cp_preview_raster = get_raster_map(raster_folder, cp_preview_bounds)
+        cp_preview_img = Image.fromarray(rasterio.plot.reshape_as_image(cp_preview_raster), 'RGB')
+        cp_preview_img = cp_preview_img.resize(cp_preview_size_px)
 
-      # Draw centering cross
-      cp_draw = ImageDraw.Draw(cp_preview_img, 'RGBA')
-      cp_draw.line((cp_preview_size_px[0] // 2, 0, cp_preview_size_px[0] // 2, cp_preview_size_px[1]), fill='#f00b', width=3)
-      cp_draw.line((0, cp_preview_size_px[1] // 2, cp_preview_size_px[0], cp_preview_size_px[1] // 2), fill='#f00b', width=3)
+        # Draw centering cross
+        cp_draw = ImageDraw.Draw(cp_preview_img, 'RGBA')
+        cp_draw.line((cp_preview_size_px[0] // 2, 0, cp_preview_size_px[0] // 2, cp_preview_size_px[1]), fill='#f00b', width=3)
+        cp_draw.line((0, cp_preview_size_px[1] // 2, cp_preview_size_px[0], cp_preview_size_px[1] // 2), fill='#f00b', width=3)
 
-      # Paste the preview image
-      pages[cp_index_to_page(i)].paste(cp_preview_img, (int(pos[0] + cp_grid_cell_size_px[0] - cp_preview_size_px[0] - 5), int(pos[1] + 5)))
+        # Paste the preview image
+        pages[cp_index_to_page(i)].paste(cp_preview_img, (int(pos[0] + cp_grid_cell_size_px[0] - cp_preview_size_px[0] - 5), int(pos[1] + 5)))
     
     for i, cp in enumerate(cps):
         page = cp_index_to_page(i)
