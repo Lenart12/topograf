@@ -1,5 +1,5 @@
 import { platform } from 'os';
-import fs from 'fs';
+import fs from 'node:fs';
 import { CREATE_MAP_PY_FOLDER } from '$env/static/private';
 import util from 'util';
 import { execFile as execFileSync } from 'node:child_process';
