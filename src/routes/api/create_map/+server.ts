@@ -106,7 +106,7 @@ async function validate_request(fd: FormData) {
   const raster_layer = fd.get('raster_layer') as string;
   validated.raster_source = raster_layer;
   if (raster_layer === 'dtk50') validated.raster_folder = DTK50_FOLDER;
-  if (raster_layer === 'dtk25') validated.raster_folder = DTK25_FOLDER;
+  else if (raster_layer === 'dtk25') validated.raster_folder = DTK25_FOLDER;
   else if (raster_layer === 'osm') validated.raster_folder = 'https://a.tile.openstreetmap.org/{z}/{x}/{y}.png';
   else if (raster_layer === 'otm') validated.raster_folder = 'https://tile.opentopomap.org/{z}/{x}/{y}.png';
   else if (raster_layer === '') validated.raster_folder = '';
