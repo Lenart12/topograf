@@ -1,4 +1,5 @@
 import type { MapOptions, Marker, Polyline } from 'leaflet';
+import type { ControlPointOptions } from './api/dto';
 
 export type CreatedMapConf = {
   map_size_w_m: number;
@@ -20,30 +21,6 @@ export type CreatedMapConf = {
 };
 
 export type GetMapOptions = (L: typeof import('leaflet')) => MapOptions;
-
-export type ControlPointOptions = {
-  // northing in meters (D96/TM)
-  n: number;
-  // easting in meters (D96/TM)
-  e: number;
-  // name of the control point (or undefined for automatic point names "START"->"KT1"->"KT2"->"CILJ")
-  name: string | undefined;
-  // type
-  kind: 'circle' | 'triangle' | 'dot' | 'skip' | 'point';
-  // color
-  color: string;
-  // line color
-  color_line: string;
-  // connection to the next point
-  connect_next: boolean;
-}
-
-export type ControlPointJson = {
-  cp_size: number;
-  cps: ControlPointOptions[];
-  bounds?: [number, number, number, number];
-}
-
 
 export type ControlPoint = {
   // id of the control point

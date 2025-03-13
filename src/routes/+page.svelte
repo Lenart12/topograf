@@ -3,9 +3,15 @@
 	import CoordSelector from '$lib/CoordSelector.svelte';
 	import { Accordion, AccordionItem, SlideToggle } from '@skeletonlabs/skeleton';
 	import MapPreview from '$lib/MapPreview.svelte';
-	import type { ControlPoint, ControlPointJson, ControlPointOptions } from '$lib/types';
+	import type { ControlPoint } from '$lib/types';
 	import { get_cp_name } from '$lib';
 	import { tick } from 'svelte';
+	import {
+		type RasterType,
+		type ControlPointOptions,
+		type ControlPointsConfig,
+		FormatMapCreateRequest
+	} from '$lib/api/dto';
 
 	// Konfiguracija
 	let velikost: 'a4' | 'a3' = 'a4';
@@ -32,7 +38,7 @@
 	let edge_wgs84: boolean = true;
 	let slikal: FileList;
 	let slikad: FileList;
-	let raster_layer: 'dtk50' | 'dtk25' | 'osm' | 'otm' | '' = 'dtk50';
+	let raster_type: RasterType = 'dtk50';
 	let control_points: ControlPoint[] = [];
 
 	let cp_default_color: string = '#ff0000';
@@ -42,23 +48,24 @@
 
 	let get_map_promise: Promise<string>;
 	function get_map() {
-		const fd = new FormData();
-		fd.append('map_size_w_m', map_size_w_m.toString());
-		fd.append('map_size_h_m', map_size_h_m.toString());
-		fd.append('map_w', map_w.toString());
-		fd.append('map_s', map_s.toString());
-		fd.append('map_e', map_e.toString());
-		fd.append('map_n', map_n.toString());
-		fd.append('target_scale', target_scale.toString());
-		fd.append('naslov1', naslov1);
-		fd.append('naslov2', naslov2);
-		fd.append('dodatno', dodatno);
-		fd.append('epsg', epsg);
-		fd.append('edge_wgs84', edge_wgs84.toString());
-		fd.append('slikal', slikal ? slikal[0] : '');
-		fd.append('slikad', slikad ? slikad[0] : '');
-		fd.append('raster_layer', raster_layer);
-		fd.append('control_points', create_control_points_json());
+		const fd = FormatMapCreateRequest({
+			map_size_w_m,
+			map_size_h_m,
+			map_w,
+			map_s,
+			map_e,
+			map_n,
+			target_scale,
+			naslov1,
+			naslov2,
+			dodatno,
+			epsg,
+			edge_wgs84,
+			slikal: slikal ? slikal[0] : undefined,
+			slikad: slikad ? slikad[0] : undefined,
+			raster_type,
+			control_points: create_control_points_json(false)
+		});
 
 		get_map_promise = (async () => {
 			download_link.innerHTML = '';
@@ -81,6 +88,7 @@
 			return 'Karta je bila uspešno ustvarjena.';
 		})();
 	}
+
 	let navodila_open = false;
 
 	let title_edited = false;
@@ -122,7 +130,7 @@
 				opts.name = opts.name === undefined ? '' : opts.name;
 				return opts;
 			})
-		} as ControlPointJson;
+		} as ControlPointsConfig;
 		if (add_bounds) {
 			cp_json['bounds'] = [map_w, map_s, map_e, map_n];
 		}
@@ -502,57 +510,45 @@
 										hidden
 										type="radio"
 										id="raster_dtk50"
-										bind:group={raster_layer}
+										bind:group={raster_type}
 										value="dtk50"
 									/>
 									<label
 										for="raster_dtk50"
 										class="p-2"
-										class:variant-filled-primary={raster_layer == 'dtk50'}>DTK50 (2014-2023)</label
+										class:variant-filled-primary={raster_type == 'dtk50'}>DTK50 (2014-2023)</label
 									>
 									<input
 										hidden
 										type="radio"
 										id="raster_dtk25"
-										bind:group={raster_layer}
+										bind:group={raster_type}
 										value="dtk25"
 									/>
 									<label
 										for="raster_dtk25"
 										class="p-2"
-										class:variant-filled-primary={raster_layer == 'dtk25'}>DTK25 (1996)</label
+										class:variant-filled-primary={raster_type == 'dtk25'}>DTK25 (1996)</label
 									>
-									<input
-										hidden
-										type="radio"
-										id="raster_otm"
-										bind:group={raster_layer}
-										value="otm"
-									/>
+									<input hidden type="radio" id="raster_otm" bind:group={raster_type} value="otm" />
 									<label
 										for="raster_otm"
 										class="p-2"
-										class:variant-filled-primary={raster_layer == 'otm'}>OpenTopoMap</label
+										class:variant-filled-primary={raster_type == 'otm'}>OpenTopoMap</label
 									>
 
-									<input
-										hidden
-										type="radio"
-										id="raster_osm"
-										bind:group={raster_layer}
-										value="osm"
-									/>
+									<input hidden type="radio" id="raster_osm" bind:group={raster_type} value="osm" />
 									<label
 										for="raster_osm"
 										class="p-2"
-										class:variant-filled-primary={raster_layer == 'osm'}>OpenStreetMap</label
+										class:variant-filled-primary={raster_type == 'osm'}>OpenStreetMap</label
 									>
 
-									<input hidden type="radio" id="raster_brez" bind:group={raster_layer} value="" />
+									<input hidden type="radio" id="raster_brez" bind:group={raster_type} value="" />
 									<label
 										for="raster_brez"
 										class="p-2"
-										class:variant-filled-primary={raster_layer == ''}>Brez</label
+										class:variant-filled-primary={raster_type == ''}>Brez</label
 									>
 								</div>
 							</div>
@@ -571,7 +567,7 @@
 								bind:map_e
 								bind:map_n
 								bind:epsg
-								bind:raster_layer
+								bind:raster_type
 								bind:inside_border
 								bind:preview_correct
 								bind:control_points

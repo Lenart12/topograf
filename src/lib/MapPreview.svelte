@@ -1,7 +1,8 @@
 <script lang="ts">
 	import type { Map, LatLng, LatLngLiteral, LatLngTuple, DivIconOptions } from 'leaflet';
 	import LeafletMap from './LeafletMap.svelte';
-	import type { ControlPoint, ControlPointOptions, GetMapOptions } from './types';
+	import type { ControlPoint, GetMapOptions } from './types';
+	import { type ControlPointOptions, FormatMapPreviewRequest, type RasterType } from './api/dto';
 	import { get_cp_name } from '$lib';
 	import { afterUpdate, tick } from 'svelte';
 
@@ -10,7 +11,7 @@
 	export let map_e: number;
 	export let map_n: number;
 	export let epsg: string;
-	export let raster_layer: string;
+	export let raster_type: RasterType;
 	export let inside_border: boolean;
 	export let preview_correct: boolean;
 	export let control_points: ControlPoint[];
@@ -29,7 +30,7 @@
 	let _map_e: number;
 	let _map_n: number;
 	let _epsg: string;
-	let _raster_layer: string;
+	let _raster_type: RasterType;
 	let new_cp_id =
 		control_points && control_points.length > 0
 			? Math.max(...control_points.map((cp) => cp.id)) + 1
@@ -247,19 +248,20 @@
 	$: update_checkpoints('cpchange', control_points);
 
 	async function update_raster(src: string) {
-		console.log('update_raster', src, raster_layer, epsg);
-		if (preview_correct && _raster_layer === raster_layer && _epsg === epsg) {
+		console.log('update_raster', src, raster_type, epsg);
+		if (preview_correct && _raster_type === raster_type && _epsg === epsg) {
 			console.log('update_raster skip', src);
 			return;
 		}
 		preview_promise = (async () => {
-			const fd = new FormData();
-			fd.append('map_w', map_w.toString());
-			fd.append('map_s', map_s.toString());
-			fd.append('map_e', map_e.toString());
-			fd.append('map_n', map_n.toString());
-			fd.append('epsg', epsg);
-			fd.append('raster_layer', raster_layer);
+			const fd = FormatMapPreviewRequest({
+				map_w,
+				map_s,
+				map_e,
+				map_n,
+				epsg,
+				raster_type
+			});
 			const res = await fetch('/api/map_preview', {
 				method: 'POST',
 				body: fd
@@ -298,7 +300,7 @@
 			_map_s = map_s;
 			_map_e = map_e;
 			_map_n = map_n;
-			_raster_layer = raster_layer;
+			_raster_type = raster_type;
 			_epsg = epsg;
 
 			update_checkpoints('update_raster', control_points);
@@ -308,7 +310,7 @@
 		await preview_promise;
 	}
 
-	$: raster_layer !== undefined && epsg !== undefined && preview_correct && update_raster('props');
+	$: raster_type !== undefined && epsg !== undefined && preview_correct && update_raster('props');
 
 	clear_preview = () => {
 		map.eachLayer(function (layer) {

@@ -12,17 +12,18 @@ import rasterio.transform
 import rasterio.enums
 import shapely
 import json
-import base64
 import os
 import tempfile
 import hashlib
 import numpy as np
 import logging
 import contextily
+import dto
 
 ### STATIC CONFIGURATION ###
 
 # General settings
+USE_CACHE = True
 TARGET_DPI = 318
 PDF_AUTHOR = 'Topograf - topograf.scuke.si'
 
@@ -69,7 +70,7 @@ def get_raster_map_bounds(raster_folder: str):
     folder_hash = get_cache_index({'raster_folder': os.path.abspath(raster_folder)})
     bounds_cache_fn = os.path.join(get_cache_dir(), f'{folder_hash}-bounds-cache.json')
 
-    if os.path.exists(bounds_cache_fn):
+    if os.path.exists(bounds_cache_fn) and USE_CACHE:
         with open(bounds_cache_fn, 'r') as f:
             bounds = json.load(f)
             logger.info(f'Using cached raster bounds. - ({folder_hash})')
@@ -169,7 +170,7 @@ def get_raster_map(raster_folder: str, bounds: tuple[float]):
     bounds_hash = get_cache_index({'raster_folder': os.path.abspath(raster_folder), 'bounds': bounds})
     raster_cache_fn = os.path.join(get_cache_dir('raster'), f'{bounds_hash}.npy')
 
-    if os.path.exists(raster_cache_fn) and False:
+    if os.path.exists(raster_cache_fn) and USE_CACHE:
         mosaic = np.load(raster_cache_fn)
         logger.info(f'Using cached raster mosaic. - ({bounds_hash} - {mosaic.shape})')
         return mosaic
@@ -478,19 +479,19 @@ def draw_grid(map_img, grid_img, map_to_world_tr, grid_to_world_tr, real_to_map_
         logger.info('Skipping WGS84 edge drawing.')
         return real_to_map_tr.xy(0, grid_border[3] + border_bottom_px)[0]
 
-def cp_name(i, cp, cp_count):
-  if cp['name']:
-      return cp['name']
+def cp_name(i, cp: dto.ControlPointOptions, cp_count):
+  if cp.name:
+      return cp.name
   if i == 0:
       return 'START'
-  if i == cp_count - 1 and cp['connect_next'] == False:
+  if i == cp_count - 1 and cp.connect_next == False:
       return 'END'
           
   return f'KT{i}'
 
-def draw_control_points(map_img, map_to_world_tr, control_point_settings):
-    cp_size_real = control_point_settings['cp_size']
-    control_points = control_point_settings['cps']
+def draw_control_points(map_img, map_to_world_tr, control_point_settings: dto.ControlPointsConfig):
+    cp_size_real = control_point_settings.cp_size
+    control_points = control_point_settings.cps
 
     if len(control_points) == 0:
         logger.info('No control points to draw.')
@@ -514,11 +515,11 @@ def draw_control_points(map_img, map_to_world_tr, control_point_settings):
     
     # Recalculate the names and positions of the control points
     for i, cp in enumerate(control_points):
-        cp['name'] = cp_name(i, cp, cp_count)
-        x, y = map_to_world_tr.colrow(cp['e'], cp['n'])
+        cp.name = cp_name(i, cp, cp_count)
+        x, y = map_to_world_tr.colrow(cp.e, cp.n)
         x, y = x * map_supersample, y * map_supersample
-        cp['x'] = x
-        cp['y'] = y
+        cp.x = x
+        cp.y = y
 
 
     def next_cp(i):
@@ -527,25 +528,25 @@ def draw_control_points(map_img, map_to_world_tr, control_point_settings):
     def prev_cp(i):
         return control_points[(i - 1) % cp_count]
     
-    def calculate_label_position(i, cp, label_distance_factor=1.5):
+    def calculate_label_position(i, cp: dto.ControlPointOptions, label_distance_factor=1.5):
         # Skip if we don't have enough points for angle calculation
         if cp_count < 3:
-            return cp['x'], cp['y'] - cp_size_px * label_distance_factor
+            return cp.x, cp.y - cp_size_px * label_distance_factor
         
         cp_curr = cp
         cp_prev = prev_cp(i)
         cp_next = next_cp(i)
         
         # Calculate vectors from current CP to previous and next CPs
-        vec_to_prev = (cp_prev['x'] - cp_curr['x'], cp_prev['y'] - cp_curr['y'])
-        vec_to_next = (cp_next['x'] - cp_curr['x'], cp_next['y'] - cp_curr['y'])
+        vec_to_prev = (cp_prev.x - cp_curr.x, cp_prev.y - cp_curr.y)
+        vec_to_next = (cp_next.x - cp_curr.x, cp_next.y - cp_curr.y)
         
         # Normalize vectors
         prev_len = math.sqrt(vec_to_prev[0]**2 + vec_to_prev[1]**2)
         next_len = math.sqrt(vec_to_next[0]**2 + vec_to_next[1]**2)
         
         if prev_len == 0 or next_len == 0:
-            return cp['x'], cp['y'] - cp_size_px * label_distance_factor
+            return cp.x, cp.y - cp_size_px * label_distance_factor
         
         prev_norm = (vec_to_prev[0]/prev_len, vec_to_prev[1]/prev_len)
         next_norm = (vec_to_next[0]/next_len, vec_to_next[1]/next_len)
@@ -567,8 +568,8 @@ def draw_control_points(map_img, map_to_world_tr, control_point_settings):
         
         # Calculate label position at a distance from the control point
         label_distance = cp_size_px * label_distance_factor
-        label_x = cp['x'] + bisector_x * label_distance
-        label_y = cp['y'] + bisector_y * label_distance
+        label_x = cp.x + bisector_x * label_distance
+        label_y = cp.y + bisector_y * label_distance
 
         angle = math.degrees(math.atan2(-bisector_y, bisector_x))
     
@@ -609,54 +610,55 @@ def draw_control_points(map_img, map_to_world_tr, control_point_settings):
              x + cp_size_px, y + cp_size_px),
              outline=col, width=cp_lines_width_px)
         
-    def draw_line(from_cp, to_cp):
-        if to_cp['kind'] == 'skip':
+    def draw_line(from_cp: dto.ControlPointOptions, to_cp: dto.ControlPointOptions):
+        if to_cp.kind == dto.ControlPointKind.SKIP:
             return
 
-        theta = math.atan2(to_cp['y'] - from_cp['y'], to_cp['x'] - from_cp['x'])
+        theta = math.atan2(to_cp.y - from_cp.y, to_cp.x - from_cp.x)
+        theta_rev = theta - math.pi
 
-        def cp_radius(cp):
-            if cp['kind'] == 'triangle':
-                return cp_size_px / (2 * math.cos(math.acos(math.sin(3*(theta + math.pi)))/3)) # Circumradius of a triangle
-            elif cp['kind'] == 'dot':
+        def cp_radius(cp, theta=theta):
+            if cp.kind == dto.ControlPointKind.TRIANGLE:
+                return (cp_size_px - cp_lines_width_px / 2) / (2 * math.cos(math.acos(math.sin(3*(theta + math.pi)))/3)) # Circumradius of a triangle
+            elif cp.kind == dto.ControlPointKind.DOT:
                 return cp_dot_size_px * 2 # Add some margin to the dot
-            elif cp['kind'] == 'point':
+            elif cp.kind == dto.ControlPointKind.POINT:
                 return 0
             return cp_size_px
 
-        from_x = from_cp['x'] + cp_radius(from_cp) * math.cos(theta)
-        from_y = from_cp['y'] + cp_radius(from_cp) * math.sin(theta)
-        to_x = to_cp['x'] - cp_radius(to_cp) * math.cos(theta)
-        to_y = to_cp['y'] - cp_radius(to_cp) * math.sin(theta)
+        from_x = from_cp.x + cp_radius(from_cp) * math.cos(theta)
+        from_y = from_cp.y + cp_radius(from_cp) * math.sin(theta)
+        to_x = to_cp.x - cp_radius(to_cp, theta_rev) * math.cos(theta)
+        to_y = to_cp.y - cp_radius(to_cp, theta_rev) * math.sin(theta)
 
-        cp_draw.line((from_x, from_y, to_x, to_y), fill=from_cp['color_line'], width=cp_lines_width_px)
+        cp_draw.line((from_x, from_y, to_x, to_y), fill=from_cp.color_line, width=cp_lines_width_px)
 
     for i, cp in enumerate(control_points):
-        if cp['kind'] == 'skip':
+        if cp.kind == dto.ControlPointKind.SKIP:
             continue
 
-        x, y = cp['x'], cp['y']
+        x, y = cp.x, cp.y
 
         # middle dot
-        if cp['kind'] != 'point':
+        if cp.kind != dto.ControlPointKind.POINT:
           cp_draw.ellipse(
               (x - cp_dot_size_px, y - cp_dot_size_px, x + cp_dot_size_px, y + cp_dot_size_px),
-              fill=cp['color'])
+              fill=cp.color)
         
-        if cp['connect_next']:
+        if cp.connect_next:
             draw_line(cp, next_cp(i))
 
-        if cp['kind'] == 'triangle':
-            draw_triangle_cp(x, y, cp['color'])
-        elif cp['kind'] == 'circle':
-            draw_circle_cp(x, y, cp['color'])
-        elif cp['kind'] == 'dot':
+        if cp.kind == dto.ControlPointKind.TRIANGLE:
+            draw_triangle_cp(x, y, cp.color)
+        elif cp.kind == dto.ControlPointKind.CIRCLE:
+            draw_circle_cp(x, y, cp.color)
+        elif cp.kind == dto.ControlPointKind.DOT:
             pass
         else:
-            logger.warning(f'Unknown control point kind: {cp["kind"]}')
+            logger.warning(f'Unknown control point kind: {cp.kind}')
 
         label_x, label_y, anchor = calculate_label_position(i, cp)
-        cp_draw.text((label_x, label_y), cp['name'], fill=cp['color'], align='center', anchor=anchor, font=cp_font)
+        cp_draw.text((label_x, label_y), cp.name, fill=cp.color, align='center', anchor=anchor, font=cp_font)
 
     # Downsample the control points image
     cp_img = cp_img.resize(map_img.size)
@@ -901,8 +903,8 @@ def get_preview_image(bounds, epsg, raster_folder):
 
     return grid_img
 
-def create_control_point_report(control_point_settings, raster_folder, title, output_file):
-    cps = control_point_settings['cps']
+def create_control_point_report(control_point_settings: dto.ControlPointsConfig, raster_folder, title, output_file):
+    cps = control_point_settings.cps
     cp_count = len(cps)
     if cp_count == 0:
         logger.info('No control points to draw.')
@@ -961,13 +963,13 @@ def create_control_point_report(control_point_settings, raster_folder, title, ou
       )
 
       # Convert to WGS84
-      cp_wgs = cs_from_to_tr.transform(cp['e'], cp['n'])
+      cp_wgs = cs_from_to_tr.transform(cp.e, cp.n)
       cp_wgs_formated = [ deg_to_deg_min_sec(c, 2) for c in cp_wgs ]
 
       cp_text = [
           f'KT: {cp_name(i, cp, cp_count)}',
-          f'N: {cp["n"]:.3f}',
-          f'E: {cp["e"]:.3f}',
+          f'N: {cp.n:.3f}',
+          f'E: {cp.e:.3f}',
           f'φ: {cp_wgs_formated[0]}',
           f'λ: {cp_wgs_formated[1]}',
           f'φ: {cp_wgs[0]:.6f}',
@@ -981,10 +983,10 @@ def create_control_point_report(control_point_settings, raster_folder, title, ou
       # Get the preview image
       if raster_folder != '':
         cp_preview_bounds = (
-            cp['e'] - CP_REPORT_PREVIEW_SIZE_RADIUS_M,
-            cp['n'] - CP_REPORT_PREVIEW_SIZE_RADIUS_M,
-            cp['e'] + CP_REPORT_PREVIEW_SIZE_RADIUS_M,
-            cp['n'] + CP_REPORT_PREVIEW_SIZE_RADIUS_M
+            cp.e - CP_REPORT_PREVIEW_SIZE_RADIUS_M,
+            cp.n - CP_REPORT_PREVIEW_SIZE_RADIUS_M,
+            cp.e + CP_REPORT_PREVIEW_SIZE_RADIUS_M,
+            cp.n + CP_REPORT_PREVIEW_SIZE_RADIUS_M
         )
         cp_preview_raster = get_raster_map(raster_folder, cp_preview_bounds)
         cp_preview_img = Image.fromarray(rasterio.plot.reshape_as_image(cp_preview_raster), 'RGB')
@@ -1009,128 +1011,77 @@ def create_control_point_report(control_point_settings, raster_folder, title, ou
 
     pages[0].save(output_file, save_all=True, append_images=pages[1:], dpi=(TARGET_DPI, TARGET_DPI), author=PDF_AUTHOR)
 
-def create_map(configuration):
-    # Unpack the configuration
-    # Map index
-    map_id = configuration['map_id']
-
-    # Map size
-    map_size_w_m = configuration['map_size_w_m']
-    map_size_h_m = configuration['map_size_h_m']
-
-    # Map bounds
-    map_w = configuration['map_w']
-    map_s = configuration['map_s']
-    map_e = configuration['map_e']
-    map_n = configuration['map_n']
-
-    # Grid configuration
-    target_scale = configuration['target_scale']
-    epsg = configuration['epsg']
-    edge_wgs84 = configuration['edge_wgs84']
-
-    # Markings
-    naslov1 = configuration['naslov1']
-    naslov2 = configuration['naslov2']
-    dodatno = configuration['dodatno']
-    slikal = configuration['slikal']
-    slikad = configuration['slikad']
-
-    # Control points
-    control_points = configuration['control_points']
-
-    logger.info(control_points)
-
-    # Raster layer
-    raster_source = configuration['raster_source']
-    raster_folder = configuration['raster_folder']
-
+def create_map(r: dto.MapCreateRequest):
     # Temp folder
-    if 'temp_folder' in configuration:
-        global TEMP_DIR
-        TEMP_DIR = configuration['temp_folder']
+    global TEMP_DIR
+    TEMP_DIR = r.output_folder
+    output_file = os.path.join(get_cache_dir(f'maps/{r.id}'), 'map.pdf')
+    output_conf = os.path.join(get_cache_dir(f'maps/{r.id}'), 'conf.json')
+    output_cp_report = os.path.join(get_cache_dir(f'maps/{r.id}'), 'cp_report.pdf')
 
-    output_file = os.path.join(get_cache_dir(f'maps/{map_id}'), 'map.pdf')
-    output_conf = os.path.join(get_cache_dir(f'maps/{map_id}'), 'conf.json')
-    output_cp_report = os.path.join(get_cache_dir(f'maps/{map_id}'), 'cp_report.pdf')
-
-    logger.info(f'Creating map: {map_id}')
+    logger.info(f'Creating map: {r.id} - {r.naslov1} {r.naslov2}')
 
     if os.path.exists(output_file):
         logger.info(f'Map exists (nothing to do). - ({output_file})')
-        # return
-        logger.warning(f'DEBUG: Overwriting existing map. - ({output_file})')
+        return
     
     os.makedirs(os.path.dirname(output_file), exist_ok=True)
 
-    map_img, grid_img, map_to_world_tr, grid_to_world_tr, real_to_map_tr, map_to_grid = get_grid_and_map((map_size_w_m, map_size_h_m), (map_w, map_s, map_e, map_n), raster_folder)
+    map_img, grid_img, map_to_world_tr, grid_to_world_tr, real_to_map_tr, map_to_grid = get_grid_and_map((r.map_size_w_m, r.map_size_h_m), (r.map_w, r.map_s, r.map_e, r.map_n), r.raster_source)
     
-    border_bottom = draw_grid(map_img, grid_img, map_to_world_tr, grid_to_world_tr, real_to_map_tr, epsg, edge_wgs84, map_to_grid)
+    border_bottom = draw_grid(map_img, grid_img, map_to_world_tr, grid_to_world_tr, real_to_map_tr, r.epsg, r.edge_wgs84, map_to_grid)
 
-    if control_points:
-        draw_control_points(map_img, map_to_world_tr, json.loads(control_points))
-        cp_title = f'Kontrolne točke - {naslov1} {naslov2}'
-        create_control_point_report(json.loads(control_points), raster_folder, cp_title, output_cp_report)
+    if len(r.control_points.cps) > 0:
+        draw_control_points(map_img, map_to_world_tr, r.control_points)
+        cp_title = f'Kontrolne točke - {r.naslov1} {r.naslov2}'
+        create_control_point_report(r.control_points, r.raster_source, cp_title, output_cp_report)
 
     markings_bbox = (
         GRID_MARGIN_M[3],
         float(border_bottom),
-        map_size_w_m - GRID_MARGIN_M[1],
-        map_size_h_m - 0.005
+        r.map_size_w_m - GRID_MARGIN_M[1],
+        r.map_size_h_m - 0.005
     )
 
-    draw_markings(map_img, markings_bbox, naslov1, naslov2, dodatno, slikal, slikad, epsg, edge_wgs84, target_scale, raster_source, real_to_map_tr)
+    draw_markings(map_img, markings_bbox, r.naslov1, r.naslov2, r.dodatno, r.slikal, r.slikad, r.epsg, r.edge_wgs84, r.target_scale, r.raster_type, real_to_map_tr)
 
     logger.info(f'Saving map to: {output_file}')
     map_img.save(output_file, dpi=(TARGET_DPI, TARGET_DPI), author=PDF_AUTHOR)
 
-    configuration.pop('temp_folder')
-    configuration.pop('request_type')
-    configuration['raster_folder'] = os.path.basename(os.path.dirname(raster_folder))
-    configuration['slikal'] = os.path.basename(slikal) if slikal else None
-    configuration['slikad'] = os.path.basename(slikad) if slikad else None
-    with open(output_conf, 'w') as f:
-        json.dump(configuration, f)
-
-def map_preview(configuration):
-    map_w = configuration['map_w']
-    map_s = configuration['map_s']
-    map_e = configuration['map_e']
-    map_n = configuration['map_n']
-    epsg = configuration['epsg']
-    raster_source = configuration['raster_source']
-    raster_folder = configuration['raster_folder']
-
-    logger.info(f'Creating map preview. ({map_w}, {map_s}, {map_e}, {map_n}, {epsg}, {raster_source}, {raster_folder})')
-    bounds = (map_w, map_s, map_e, map_n)
     
-    grid_img = get_preview_image(bounds, epsg, raster_folder)
+    # Save the configuration (remove full paths)
+    r.output_folder = os.path.basename(r.output_folder)
+    r.raster_source = os.path.basename(r.raster_source)
+    if not r.raster_source.startswith('https://'):
+        r.raster_source = os.path.basename(r.raster_source)
+    r.slikal = os.path.basename(r.slikal)
+    r.slikad = os.path.basename(r.slikad)
+    with open(output_conf, 'w') as f:
+        f.write(r.model_dump_json())
 
-    grid_img.save(configuration['output_file'], dpi=(TARGET_DPI, TARGET_DPI))
+def map_preview(r: dto.MapPreviewRequest):
+    logger.info(f'Creating map preview. ({r.map_w}, {r.map_s}, {r.map_e}, {r.map_n}, {r.epsg}, {r.raster_source})')
+    bounds = (r.map_w, r.map_s, r.map_e, r.map_n)
+    
+    grid_img = get_preview_image(bounds, r.epsg, r.raster_source)
+
+    grid_img.save(r.output_file, dpi=(TARGET_DPI, TARGET_DPI))
 
 
 def main():
     logging.basicConfig(level=logging.INFO, stream=sys.stdout)
-    if len(sys.argv) != 2:
-        logger.error('Usage: python create_map.py <base64_configuration>')
-        # exit(1)
-        logger.warning('Using default configuration')
-        sys.argv.append('eyJyZXF1ZXN0X3R5cGUiOiJtYXBfcHJldmlldyIsIm1hcF93Ijo0NDcxMzYsIm1hcF9zIjo3MDg4MywibWFwX2UiOjQ1Mzg1MSwibWFwX24iOjc1MzcwLCJlcHNnIjoiRVBTRzozNzk0IiwicmFzdGVyX2ZvbGRlciI6IkM6XFxVc2Vyc1xcTGVuYXJ0XFxEZXNrdG9wXFxEVEs1MFxcZDI1Iiwib3V0cHV0X2ZpbGUiOiJDOlxcVXNlcnNcXExlbmFydFxcRGVza3RvcFxcdG9wb2R0a1xcLmNyZWF0ZV9tYXBfY2FjaGUvbWFwX3ByZXZpZXdzLzc1Y2MyMGI1ODQ0ZTg3NDllNjEzZDYxZWZjNTg0YjQ1LnBuZyJ9')
-    else:
-        logger.info(f'Configuration: {sys.argv[1]}')
+    logger.info(f'Arguments: {sys.argv[1:]}')
+    cm_args = dto.parse_command_line_args()
+    request = dto.create_request_from_args(cm_args)
 
-    configuration = json.loads(base64.b64decode(sys.argv[1]).decode('utf-8'))
-
-    if configuration['request_type'] == 'create_map':
-        create_map(configuration)
-    elif configuration['request_type'] == 'map_preview':
-        map_preview(configuration)
+    if request.request_type == dto.RequestType.CREATE_MAP:
+        create_map(request)
+    elif request.request_type == dto.RequestType.MAP_PREVIEW:
+        map_preview(request)
     else:
-        logger.error(f'Unknown request type: {configuration["request_type"]}')
+        logger.error(f'Unknown request type: {request}')
         exit(1)
 
 if __name__ == '__main__':
     main()
     exit(0)
-
-# raise NotImplementedError('This script is meant to be run as a standalone script.')
