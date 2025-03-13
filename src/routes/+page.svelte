@@ -32,7 +32,7 @@
 	let edge_wgs84: boolean = true;
 	let slikal: FileList;
 	let slikad: FileList;
-	let raster_layer: 'dtk50' | '' = 'dtk50';
+	let raster_layer: 'dtk50' | 'dtk25' | 'osm' | 'otm' | '' = 'dtk50';
 	let control_points: ControlPoint[] = [];
 
 	let cp_default_color: string = '#ff0000';
@@ -415,9 +415,6 @@
 						<svelte:fragment slot="content">
 							<div class="space-y-2">
 								<h3 class="h3">Koordinatni sistemi</h3>
-								{#if preview_correct}
-									Menjava koordinatnega sistema bo povzročila ponovno stvaritev predogleda karte!
-								{/if}
 								<div>
 									<label for="epsg">Koordinatni sistem karte</label>
 									<div class="btn-group variant-soft flex-wrap items-stretch">
@@ -512,6 +509,43 @@
 										for="raster_dtk50"
 										class="p-2"
 										class:variant-filled-primary={raster_layer == 'dtk50'}>DTK50 (2014-2023)</label
+									>
+									<input
+										hidden
+										type="radio"
+										id="raster_dtk25"
+										bind:group={raster_layer}
+										value="dtk25"
+									/>
+									<label
+										for="raster_dtk25"
+										class="p-2"
+										class:variant-filled-primary={raster_layer == 'dtk25'}>DTK25 (1996)</label
+									>
+									<input
+										hidden
+										type="radio"
+										id="raster_otm"
+										bind:group={raster_layer}
+										value="otm"
+									/>
+									<label
+										for="raster_otm"
+										class="p-2"
+										class:variant-filled-primary={raster_layer == 'otm'}>OpenTopoMap</label
+									>
+
+									<input
+										hidden
+										type="radio"
+										id="raster_osm"
+										bind:group={raster_layer}
+										value="osm"
+									/>
+									<label
+										for="raster_osm"
+										class="p-2"
+										class:variant-filled-primary={raster_layer == 'osm'}>OpenStreetMap</label
 									>
 
 									<input hidden type="radio" id="raster_brez" bind:group={raster_layer} value="" />

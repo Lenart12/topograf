@@ -2,7 +2,7 @@ import { platform } from 'os';
 import util from 'util';
 import { exec } from 'child_process';
 import fs from 'node:fs';
-import { CREATE_MAP_PY_FOLDER, DTK50_FOLDER } from '$env/static/private';
+import { CREATE_MAP_PY_FOLDER, DTK50_FOLDER, DTK25_FOLDER } from '$env/static/private';
 const aexec = util.promisify(exec);
 import { RateLimiter } from 'sveltekit-rate-limiter/server';
 import crypto_js from 'crypto-js';
@@ -16,6 +16,7 @@ interface MapPreviewRequest {
   map_e: number;
   map_n: number;
   epsg: string;
+  raster_source: string;
   raster_folder: string;
   output_file: string;
 }
@@ -42,8 +43,14 @@ async function validate_request(fd: FormData) {
   if (validated.map_w >= validated.map_e) throw new Error('map_w >= map_e');
   if (validated.map_s >= validated.map_n) throw new Error('map_s >= map_n');
 
-  if (fd.get('raster_layer') === 'dtk50') validated.raster_folder = DTK50_FOLDER;
-  else if (fd.get('raster_layer') === '') validated.raster_folder = '';
+  console.log(DTK25_FOLDER)
+  const raster_layer = fd.get('raster_layer') as string;
+  validated.raster_source = raster_layer;
+  if (raster_layer === 'dtk50') validated.raster_folder = DTK50_FOLDER;
+  else if (raster_layer === 'dtk25') validated.raster_folder = DTK25_FOLDER;
+  else if (raster_layer === 'osm') validated.raster_folder = 'https://a.tile.openstreetmap.org/{z}/{x}/{y}.png';
+  else if (raster_layer === 'otm') validated.raster_folder = 'https://tile.opentopomap.org/{z}/{x}/{y}.png';
+  else if (raster_layer === '') validated.raster_folder = '';
   else throw new Error('Napačen raster sloj');
 
   const output_dir = `${TEMP_FOLDER}/map_previews`;

@@ -9,6 +9,7 @@ import rasterio
 import rasterio.merge
 import rasterio.plot
 import rasterio.transform
+import rasterio.enums
 import shapely
 import json
 import base64
@@ -17,6 +18,7 @@ import tempfile
 import hashlib
 import numpy as np
 import logging
+import contextily
 
 ### STATIC CONFIGURATION ###
 
@@ -86,6 +88,72 @@ def get_raster_map_bounds(raster_folder: str):
     logger.info(f'Discovered raster bounds. - ({folder_hash})')
     return bounds
 
+def get_raster_map_tiles(tiles_url: str, bounds: tuple[float]):
+    """
+    Gets the raster map from a tile server.
+    
+    Parameters
+    ----------
+    tiles_url : str
+        The URL of the tile server.
+    bounds : tuple (west, south, east, north)
+        The bounds of the area to be merged. EPSG:3794
+    """
+
+    crs_from = pyproj.CRS.from_epsg(3794)
+    crs_to = pyproj.CRS.from_epsg(3857)
+    transformer = pyproj.Transformer.from_crs(crs_from, crs_to)
+
+    # Convert bounds to EPSG:3857
+    corners = [
+        transformer.transform(bounds[0], bounds[1]), # SW
+        transformer.transform(bounds[2], bounds[1]), # SE
+        transformer.transform(bounds[2], bounds[3]), # NE
+        transformer.transform(bounds[0], bounds[3])  # NW
+    ]
+    bounds_3857 = [
+        min(c[0] for c in corners),
+        min(c[1] for c in corners),
+        max(c[0] for c in corners),
+        max(c[1] for c in corners)
+    ]
+
+    # Get the tiles
+    logger.info(f'Getting raster map tiles. - ({bounds_3857})')
+    try:
+        # Download the tiles
+        mosaic_web, extent_web = contextily.bounds2img(*bounds_3857, source=tiles_url)
+        # Warp the tiles to EPSG:3794
+        mosaic_d96, extent_d96 = contextily.warp_tiles(mosaic_web, extent_web, 'EPSG:3794', rasterio.enums.Resampling.nearest)
+
+        # Crop the tiles to the bounds
+        bands = mosaic_d96.shape[2]
+        # Remove the alpha channel if it exists
+        if bands == 4:
+            mosaic_d96 = mosaic_d96[:,:,:3]
+            bands = 3
+
+        transform = rasterio.transform.from_bounds(
+            extent_d96[0], extent_d96[2],
+            extent_d96[1], extent_d96[3],
+            mosaic_d96.shape[1], mosaic_d96.shape[0]
+        )
+        with rasterio.io.MemoryFile() as memfile:
+            with memfile.open(
+                driver='GTiff',
+                width=mosaic_d96.shape[1],
+                height=mosaic_d96.shape[0],
+                count=bands,
+                dtype=mosaic_d96.dtype,
+                crs='EPSG:3794',
+                transform=transform
+            ) as dst:
+                dst.write(rasterio.plot.reshape_as_raster(mosaic_d96))
+            with memfile.open() as src:
+                return rasterio.merge.merge([src], bounds)[0]
+    except Exception as e:
+        raise ValueError(f'Failed to get raster map tiles: {e}')
+
 def get_raster_map(raster_folder: str, bounds: tuple[float]):
     """
     Merges all the raster files in the folder that intersect with the given bounds.
@@ -101,9 +169,15 @@ def get_raster_map(raster_folder: str, bounds: tuple[float]):
     bounds_hash = get_cache_index({'raster_folder': os.path.abspath(raster_folder), 'bounds': bounds})
     raster_cache_fn = os.path.join(get_cache_dir('raster'), f'{bounds_hash}.npy')
 
-    if os.path.exists(raster_cache_fn):
+    if os.path.exists(raster_cache_fn) and False:
         mosaic = np.load(raster_cache_fn)
         logger.info(f'Using cached raster mosaic. - ({bounds_hash} - {mosaic.shape})')
+        return mosaic
+
+    if raster_folder.startswith('https://'):
+        mosaic = get_raster_map_tiles(raster_folder, bounds)
+        np.save(raster_cache_fn, mosaic)
+        logger.info(f'Created raster mosaic. - ({bounds_hash} - {mosaic.shape})')
         return mosaic
 
     raster_bounds = get_raster_map_bounds(raster_folder)
@@ -519,7 +593,7 @@ def draw_control_points(map_img, map_to_world_tr, control_point_settings):
     map_img.paste(cp_img, (0, 0), cp_img)
 
 
-def draw_markings(map_img, bbox, naslov1, naslov2, dodatno, slikal, slikad, epsg, edge_wgs84, target_scale, real_to_map_tr):
+def draw_markings(map_img, bbox, naslov1, naslov2, dodatno, slikal, slikad, epsg, edge_wgs84, target_scale, raster_source, real_to_map_tr):
     map_draw = ImageDraw.Draw(map_img)
     
     title_font = ImageFont.truetype('times.ttf', 60)
@@ -638,10 +712,18 @@ def draw_markings(map_img, bbox, naslov1, naslov2, dodatno, slikal, slikad, epsg
         else:
             return f'{crs.name}:{crs.to_epsg()}{extra}'
 
+    ekvidistanca = {
+        'dtk50': '20m',
+        'dtk25': '10m',
+        'otm': '10m',
+        'osm': 'Brez',
+        '': 'Brez'
+    }[raster_source]
+
     map_info_txt = [
         f'Koord. sistem: {get_coord_system_name()}',
         f'Merilo: 1:{int(target_scale)}',
-        f'Ekvidistanca: 20m',
+        f'Ekvidistanca: {ekvidistanca}',
     ][::-1]
     
     map_info_p0 = [scale_line_p1[0] + 10, scale_line_p1[1]]
@@ -649,9 +731,24 @@ def draw_markings(map_img, bbox, naslov1, naslov2, dodatno, slikal, slikad, epsg
         map_draw.text(map_info_p0, txt, anchor='lb', fill='black', align='left', font=map_info_font)
         map_info_p0[1] -= map_info_font.getbbox(txt)[3]
 
+    vir = {
+        'dtk50': 'Državna topografska karta 1:50.000',
+        'dtk25': 'Državna topografska karta 1:25.000',
+        'otm': 'OpenTopoMap',
+        'osm': 'OpenStreetMap',
+        '': ''
+    }[raster_source]
+    vir_attr = {
+        'dtk50': 'Geodetska uprava RS, 2023',
+        'dtk25': 'Geodetska uprava RS, 1996',
+        'otm': 'OpenTopoMap (CC-BY-SA)',
+        'osm': 'OpenStreetMap (CC-BY-SA)',
+        '': ''
+    }[raster_source]
+
     map_source_txt = [
-        f'Vir: Državna topografska karta 1:50.000',
-        f'© Geodetska uprava RS, 2023; Ustvarjeno s topograf.scuke.si',
+        f'Vir: {vir}',
+        f'© {vir_attr}; Ustvarjeno s topograf.scuke.si',
         f'{dodatno}'
     ][::-1]
     map_source_p0 = list(real_to_map_tr.colrow(bbox[2], bbox[3]))
@@ -872,6 +969,7 @@ def create_map(configuration):
     logger.info(control_points)
 
     # Raster layer
+    raster_source = configuration['raster_source']
     raster_folder = configuration['raster_folder']
 
     # Temp folder
@@ -908,7 +1006,7 @@ def create_map(configuration):
         map_size_h_m - 0.005
     )
 
-    draw_markings(map_img, markings_bbox, naslov1, naslov2, dodatno, slikal, slikad, epsg, edge_wgs84, target_scale, real_to_map_tr)
+    draw_markings(map_img, markings_bbox, naslov1, naslov2, dodatno, slikal, slikad, epsg, edge_wgs84, target_scale, raster_source, real_to_map_tr)
 
     logger.info(f'Saving map to: {output_file}')
     map_img.save(output_file, dpi=(TARGET_DPI, TARGET_DPI), author=PDF_AUTHOR)
@@ -927,9 +1025,10 @@ def map_preview(configuration):
     map_e = configuration['map_e']
     map_n = configuration['map_n']
     epsg = configuration['epsg']
+    raster_source = configuration['raster_source']
     raster_folder = configuration['raster_folder']
 
-    logger.info(f'Creating map preview. ({map_w}, {map_s}, {map_e}, {map_n}, {epsg}, {raster_folder})')
+    logger.info(f'Creating map preview. ({map_w}, {map_s}, {map_e}, {map_n}, {epsg}, {raster_source}, {raster_folder})')
     bounds = (map_w, map_s, map_e, map_n)
     
     grid_img = get_preview_image(bounds, epsg, raster_folder)
@@ -943,7 +1042,7 @@ def main():
         logger.error('Usage: python create_map.py <base64_configuration>')
         # exit(1)
         logger.warning('Using default configuration')
-        sys.argv.append('eyJyZXF1ZXN0X3R5cGUiOiJjcmVhdGVfbWFwIiwibWFwX3NpemVfd19tIjowLjI5NywibWFwX3NpemVfaF9tIjowLjIxLCJtYXBfdyI6NDQ3MTM2LCJtYXBfcyI6NzA4ODMsIm1hcF9lIjo0NTM4NTEsIm1hcF9uIjo3NTM3MCwidGFyZ2V0X3NjYWxlIjoyNTAwMCwibmFzbG92MSI6IkNlcmtuaWNhIiwibmFzbG92MiI6IkthcnRhIHphIG9yaWVudGFjaWpvIiwiZG9kYXRubyI6Ikl6ZGVsYWwgUkrFoCB6YSBwb3RyZWJlIG9yaWVudGFjaWplLiBLYXJ0YSBuaSBiaWxhIHJlYW1idWxpcmFuYS4iLCJlcHNnIjoiRVBTRzozNzk0IiwiZWRnZV93Z3M4NCI6dHJ1ZSwiY29udHJvbF9wb2ludHMiOiJ7XCJjcF9zaXplXCI6MC4wMDMsXCJjcHNcIjpbe1wiZVwiOjQ0OTI5My4zMzMzNzQwMjM0NCxcIm5cIjo3NDA5Ni41MzQ5MDM0Mjc5NSxcIm5hbWVcIjpcIlwiLFwia2luZFwiOlwidHJpYW5nbGVcIixcImNvbG9yXCI6XCIjZmYwMDAwXCIsXCJjb2xvcl9saW5lXCI6XCIjZmYwMDAwXCIsXCJjb25uZWN0X25leHRcIjp0cnVlfSx7XCJlXCI6NDQ5OTQ5LjMzMzM3NDAyMzQ0LFwiblwiOjc0MTQ0LjU0ODE0OTI2OTcsXCJuYW1lXCI6XCJcIixcImtpbmRcIjpcImNpcmNsZVwiLFwiY29sb3JcIjpcIiNmZjAwMDBcIixcImNvbG9yX2xpbmVcIjpcIiNmZjAwMDBcIixcImNvbm5lY3RfbmV4dFwiOnRydWV9LHtcImVcIjo0NTA1OTcuMzMzMzc0MDIzNDQsXCJuXCI6NzQxNjAuNTUyNTY0NTUwMjgsXCJuYW1lXCI6XCJcIixcImtpbmRcIjpcImNpcmNsZVwiLFwiY29sb3JcIjpcIiNmZjAwMDBcIixcImNvbG9yX2xpbmVcIjpcIiNmZjAwMDBcIixcImNvbm5lY3RfbmV4dFwiOnRydWV9LHtcImVcIjo0NTExMzMuMzMzMzc0MDIzNDQsXCJuXCI6NzQyMTYuNTY4MDE4MDMyMzMsXCJuYW1lXCI6XCJcIixcImtpbmRcIjpcImNpcmNsZVwiLFwiY29sb3JcIjpcIiNmZjAwMDBcIixcImNvbG9yX2xpbmVcIjpcIiNmZjAwMDBcIixcImNvbm5lY3RfbmV4dFwiOnRydWV9LHtcImVcIjo0NTE2NjEuMzMzMzc0MDIzNDQsXCJuXCI6NzQyNDAuNTc0NjQwOTUzMTksXCJuYW1lXCI6XCJcIixcImtpbmRcIjpcImNpcmNsZVwiLFwiY29sb3JcIjpcIiNmZjAwMDBcIixcImNvbG9yX2xpbmVcIjpcIiNmZjAwMDBcIixcImNvbm5lY3RfbmV4dFwiOnRydWV9LHtcImVcIjo0NTIxNDkuMzMzMzc0MDIzNDQsXCJuXCI6NzQyNDAuNTc0NjQwOTUzMTksXCJuYW1lXCI6XCJcIixcImtpbmRcIjpcImNpcmNsZVwiLFwiY29sb3JcIjpcIiNmZjAwMDBcIixcImNvbG9yX2xpbmVcIjpcIiNmZjAwMDBcIixcImNvbm5lY3RfbmV4dFwiOnRydWV9LHtcImVcIjo0NDkzMDEuMzMzMzc0MDIzNDQsXCJuXCI6NzM3MzYuNDM1NTU5NjE0ODQsXCJuYW1lXCI6XCJcIixcImtpbmRcIjpcImNpcmNsZVwiLFwiY29sb3JcIjpcIiNmZjAwMDBcIixcImNvbG9yX2xpbmVcIjpcIiNmZjAwMDBcIixcImNvbm5lY3RfbmV4dFwiOnRydWV9LHtcImVcIjo0NDk5NzMuMzMzMzc0MDIzNDQsXCJuXCI6NzM4MDAuNDUzMjIwNzM3MTcsXCJuYW1lXCI6XCJcIixcImtpbmRcIjpcImNpcmNsZVwiLFwiY29sb3JcIjpcIiNmZjAwMDBcIixcImNvbG9yX2xpbmVcIjpcIiNmZjAwMDBcIixcImNvbm5lY3RfbmV4dFwiOnRydWV9LHtcImVcIjo0NTA2MDUuMzMzMzc0MDIzNDQsXCJuXCI6NzM4OTYuNDc5NzEyNDIwNjcsXCJuYW1lXCI6XCJcIixcImtpbmRcIjpcImNpcmNsZVwiLFwiY29sb3JcIjpcIiNmZjAwMDBcIixcImNvbG9yX2xpbmVcIjpcIiNmZjAwMDBcIixcImNvbm5lY3RfbmV4dFwiOnRydWV9LHtcImVcIjo0NTExODEuMzMzMzc0MDIzNDQsXCJuXCI6NzM4NTYuNDY4Njc0MjE5MjEsXCJuYW1lXCI6XCJcIixcImtpbmRcIjpcImNpcmNsZVwiLFwiY29sb3JcIjpcIiNmZjAwMDBcIixcImNvbG9yX2xpbmVcIjpcIiNmZjAwMDBcIixcImNvbm5lY3RfbmV4dFwiOnRydWV9LHtcImVcIjo0NTE2ODUuMzMzMzc0MDIzNDQsXCJuXCI6NzM5MjAuNDg2MzM1MzQxNTQsXCJuYW1lXCI6XCJcIixcImtpbmRcIjpcImNpcmNsZVwiLFwiY29sb3JcIjpcIiNmZjAwMDBcIixcImNvbG9yX2xpbmVcIjpcIiNmZjAwMDBcIixcImNvbm5lY3RfbmV4dFwiOnRydWV9LHtcImVcIjo0NTIyMjEuMzMzMzc0MDIzNDQsXCJuXCI6NzQwMDAuNTA4NDExNzQ0NDUsXCJuYW1lXCI6XCJcIixcImtpbmRcIjpcImNpcmNsZVwiLFwiY29sb3JcIjpcIiNmZjAwMDBcIixcImNvbG9yX2xpbmVcIjpcIiNmZjAwMDBcIixcImNvbm5lY3RfbmV4dFwiOnRydWV9LHtcImVcIjo0NDkzODkuMzMzMzc0MDIzNDQsXCJuXCI6NzMzODcuMDA1Nzg1Mjg3NDUsXCJuYW1lXCI6XCJcIixcImtpbmRcIjpcImNpcmNsZVwiLFwiY29sb3JcIjpcIiNmZjAwMDBcIixcImNvbG9yX2xpbmVcIjpcIiNmZjAwMDBcIixcImNvbm5lY3RfbmV4dFwiOnRydWV9XSxcImJvdW5kc1wiOls0NDcxMzYsNzA4ODMsNDUzODUxLDc1MzcwXX0iLCJyYXN0ZXJfZm9sZGVyIjoiQzpcXFVzZXJzXFxMZW5hcnRcXERlc2t0b3BcXERUSzUwXFxyZXMiLCJ0ZW1wX2ZvbGRlciI6IkM6XFxVc2Vyc1xcTGVuYXJ0XFxEZXNrdG9wXFx0b3BvZHRrXFwuY3JlYXRlX21hcF9jYWNoZSIsInNsaWthbCI6IiIsInNsaWthZCI6IiIsIm1hcF9pZCI6ImIwY2U4OGVhZDYyOWJhNjFiYmFhOTc4YjQ3MTg0NjViIn0=')
+        sys.argv.append('eyJyZXF1ZXN0X3R5cGUiOiJtYXBfcHJldmlldyIsIm1hcF93Ijo0NDcxMzYsIm1hcF9zIjo3MDg4MywibWFwX2UiOjQ1Mzg1MSwibWFwX24iOjc1MzcwLCJlcHNnIjoiRVBTRzozNzk0IiwicmFzdGVyX2ZvbGRlciI6IkM6XFxVc2Vyc1xcTGVuYXJ0XFxEZXNrdG9wXFxEVEs1MFxcZDI1Iiwib3V0cHV0X2ZpbGUiOiJDOlxcVXNlcnNcXExlbmFydFxcRGVza3RvcFxcdG9wb2R0a1xcLmNyZWF0ZV9tYXBfY2FjaGUvbWFwX3ByZXZpZXdzLzc1Y2MyMGI1ODQ0ZTg3NDllNjEzZDYxZWZjNTg0YjQ1LnBuZyJ9')
     else:
         logger.info(f'Configuration: {sys.argv[1]}')
 
