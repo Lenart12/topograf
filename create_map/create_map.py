@@ -42,9 +42,10 @@ CP_REPORT_PREVIEW_SIZE_RADIUS_M = 300 # Radius of the preview image in meters
 logger = logging.getLogger('create_map')
 logger.setLevel(logging.DEBUG)
 
-TEMP_DIR = os.path.join(tempfile.gettempdir(), '.create_map_cache')
+OUTPUT_DIR = os.path.join(tempfile.gettempdir(), '.create_map_cache')
+
 def get_cache_dir(folder: str = ''):
-    cache_dir = TEMP_DIR
+    cache_dir = OUTPUT_DIR
     if not os.path.exists(cache_dir):
         os.makedirs(cache_dir)
 
@@ -880,29 +881,23 @@ def draw_markings(map_img, bbox, naslov1, naslov2, dodatno, slikal, slikad, epsg
         map_source_p0[1] -= map_info_font.getbbox(txt)[3]
 
         
-def get_preview_image(bounds, epsg, raster_type, raster_folder):
-    if raster_folder != '':
-        grid_raster = get_raster_map(raster_type, raster_folder, bounds)
+def get_preview_image(bounds, epsg, raster_type, raster_source, preview_width_m, preview_height_m):
+    target_size = (
+        int(preview_width_m * TARGET_DPI / 0.0254),
+        int(preview_height_m * TARGET_DPI / 0.0254)
+    )
+    if raster_source != '':
+        grid_raster = get_raster_map(raster_type, raster_source, bounds)
         grid_img = Image.fromarray(rasterio.plot.reshape_as_image(grid_raster), 'RGB')
+        grid_img = grid_img.resize(target_size, Image.Resampling.LANCZOS)
     else:
-        target_pxpm = 1 / 4 # 4m resolution
-        map_width = bounds[2] - bounds[0]
-        map_height = bounds[3] - bounds[1]
-        target_size = (int(map_width * target_pxpm), int(map_height * target_pxpm))
         grid_img = Image.new('RGB', target_size, 0xFFFFFF)
         logger.info(f'Created blank raster map. ({target_size})')
-
-    max_preview_size = 2000
-    if any([d > max_preview_size for d in grid_img.size]):
-        aspect_ratio = grid_img.size[0] / grid_img.size[1]
-        target_size = (max_preview_size, int(max_preview_size / aspect_ratio))
-        grid_img = grid_img.resize(target_size)
-        logger.info(f'Resized raster map. ({target_size})')
 
     # Draw coordinate system
     if epsg != 'Brez':
         grid_draw = ImageDraw.Draw(grid_img)
-        grid_font = ImageFont.truetype('timesi.ttf', 48)
+        grid_font = ImageFont.truetype('timesbi.ttf', 48)
         grid_to_world_tr = rasterio.transform.AffineTransformer(rasterio.transform.from_bounds(*bounds, *grid_img.size))
         grid_to_world_tr.colrow = lambda x, y: grid_to_world_tr.rowcol(x, y)[::-1]
         cs_from = pyproj.CRS.from_epsg(3794)
@@ -916,7 +911,7 @@ def get_preview_image(bounds, epsg, raster_type, raster_folder):
             raise ValueError('The target coordinate system must be projected.')
 
         superscript_map = {
-            "0": "⁰", "1": "¹", "2": "²", "3": "³", "4": "⁴", "5": "⁵", "6": "⁶", "7": "⁷", "8": "⁸", "9": "⁹"}
+            "0": "", "1": "¹", "2": "²", "3": "³", "4": "⁴", "5": "⁵", "6": "⁶", "7": "⁷", "8": "⁸", "9": "⁹"}
 
         grid_edge_ws = grid_to_world_tr.xy(grid_img.size[1], 0)
         grid_edge_en = grid_to_world_tr.xy(0, grid_img.size[0])
@@ -1061,8 +1056,6 @@ def create_control_point_report(control_point_settings: dto.ControlPointsConfig,
 
 def create_map(r: dto.MapCreateRequest):
     # Temp folder
-    global TEMP_DIR
-    TEMP_DIR = r.output_folder
     output_file = os.path.join(get_cache_dir(f'maps/{r.id}'), 'map.pdf')
     output_conf = os.path.join(get_cache_dir(f'maps/{r.id}'), 'conf.json')
     output_cp_report = os.path.join(get_cache_dir(f'maps/{r.id}'), 'cp_report.pdf')
@@ -1111,9 +1104,16 @@ def map_preview(r: dto.MapPreviewRequest):
     logger.info(f'Creating map preview. ({r.map_w}, {r.map_s}, {r.map_e}, {r.map_n}, {r.epsg}, {r.raster_source})')
     bounds = (r.map_w, r.map_s, r.map_e, r.map_n)
     
-    grid_img = get_preview_image(bounds, r.epsg, r.raster_type, r.raster_source)
+    preview_size_m = (
+        r.map_size_w_m - GRID_MARGIN_M[1] - GRID_MARGIN_M[3],
+        r.map_size_h_m - GRID_MARGIN_M[0] - GRID_MARGIN_M[2]
+    )
 
-    grid_img.save(r.output_file, dpi=(TARGET_DPI, TARGET_DPI))
+    grid_img = get_preview_image(bounds, r.epsg, r.raster_type, r.raster_source, *preview_size_m)
+
+    output_file = os.path.join(r.output_folder, f'map_previews/{r.id}.png')
+
+    grid_img.save(output_file, dpi=(TARGET_DPI, TARGET_DPI))
 
 
 def main():
@@ -1121,6 +1121,10 @@ def main():
     logger.info(f'Arguments: {sys.argv[1:]}')
     cm_args = dto.parse_command_line_args()
     request = dto.create_request_from_args(cm_args)
+
+    global OUTPUT_DIR
+    OUTPUT_DIR = request.output_folder
+    print(f'Output dir: {OUTPUT_DIR}')
 
     if request.request_type == dto.RequestType.CREATE_MAP:
         create_map(request)

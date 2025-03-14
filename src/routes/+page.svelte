@@ -587,6 +587,8 @@
 								bind:map_n
 								bind:epsg
 								bind:raster_type
+								bind:map_size_w_m
+								bind:map_size_h_m
 								bind:inside_border
 								bind:preview_correct
 								bind:control_points

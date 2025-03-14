@@ -17,6 +17,11 @@ class MapBaseRequest {
   epsg: string;
   raster_type: RasterType;
   raster_source: PathLike;
+  map_size_w_m: number;
+  map_size_h_m: number;
+
+  output_folder: PathLike;
+
 
   constructor(request_type: RequestType, fd: TopoFormData) {
     this.request_type = request_type;
@@ -39,29 +44,30 @@ class MapBaseRequest {
         default: throw new Error('Napačen raster sloj');
       }
     })()
+    this.map_size_w_m = fd.get_number('map_size_w_m');
+    this.map_size_h_m = fd.get_number('map_size_h_m');
+    if (this.map_size_w_m > 1) throw new Error('Velikost karte je prevelika (širina) (max 1m)');
+    if (this.map_size_h_m > 1) throw new Error('Velikost karte je prevelika (višina) (max 1m)');
+    if (this.map_size_w_m < 0.1) throw new Error('Velikost karte je premajhna (širina) (min 0.1m)');
+    if (this.map_size_h_m < 0.1) throw new Error('Velikost karte je premajhna (višina) (min 0.1m)');
+    this.output_folder = TEMP_FOLDER;
+    if (!fs.existsSync(this.output_folder)) fs.mkdirSync(this.output_folder, { recursive: true });
   }
 }
 
 export class MapPreviewRequest extends MapBaseRequest {
-  output_file: PathLike = '';
-
   private constructor(tfd: TopoFormData) {
     super('map_preview', tfd);
   }
 
   public static async validate(fd: FormData) {
     const validated = new MapPreviewRequest(new TopoFormData(fd));
-    const output_dir = `${TEMP_FOLDER}/map_previews`;
-    if (!fs.existsSync(output_dir)) fs.mkdirSync(output_dir, { recursive: true });
     validated.id = get_request_id(validated);
-    validated.output_file = `${output_dir}/${validated.id}.png`;
     return validated;
   }
 }
 
 export class MapCreateRequest extends MapBaseRequest {
-  map_size_w_m: number;
-  map_size_h_m: number;
   target_scale: number;
   edge_wgs84: boolean;
   naslov1: string;
@@ -71,16 +77,8 @@ export class MapCreateRequest extends MapBaseRequest {
   slikad: PathLike;
   control_points: string;
 
-  output_folder: PathLike = '';
-
   private constructor(tfd: TopoFormData) {
     super('create_map', tfd);
-    this.map_size_w_m = tfd.get_number('map_size_w_m');
-    this.map_size_h_m = tfd.get_number('map_size_h_m');
-    if (this.map_size_w_m > 1) throw new Error('Velikost karte je prevelika (širina) (max 1m)');
-    if (this.map_size_h_m > 1) throw new Error('Velikost karte je prevelika (višina) (max 1m)');
-    if (this.map_size_w_m < 0.1) throw new Error('Velikost karte je premajhna (širina) (min 0.1m)');
-    if (this.map_size_h_m < 0.1) throw new Error('Velikost karte je premajhna (višina) (min 0.1m)');
     this.target_scale = tfd.get_number('target_scale');
     if (this.target_scale < 1000) throw new Error('Merilo je napačno ali preveliko (max 1:1000)');
     else if (this.target_scale > 100000) throw new Error('Merilo je napačno ali preveliko (max 1:100000)');
@@ -116,8 +114,6 @@ export class MapCreateRequest extends MapBaseRequest {
       throw error;
     }
     validated.id = get_request_id(validated);
-    validated.output_folder = TEMP_FOLDER;
-    if (!fs.existsSync(validated.output_folder)) fs.mkdirSync(validated.output_folder, { recursive: true });
     return validated;
   }
 }

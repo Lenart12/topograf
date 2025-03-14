@@ -12,6 +12,8 @@
 	export let map_n: number;
 	export let epsg: string;
 	export let raster_type: RasterType;
+	export let map_size_w_m: number;
+	export let map_size_h_m: number;
 	export let inside_border: boolean;
 	export let preview_correct: boolean;
 	export let control_points: ControlPoint[];
@@ -260,7 +262,9 @@
 				map_e,
 				map_n,
 				epsg,
-				raster_type
+				raster_type,
+				map_size_w_m,
+				map_size_h_m
 			});
 			const res = await fetch('/api/map_preview', {
 				method: 'POST',

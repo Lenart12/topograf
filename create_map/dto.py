@@ -56,6 +56,9 @@ class MapBaseRequest(BaseModel):
     epsg: str
     raster_type: RasterType
     raster_source: str = ""
+    map_size_w_m: float
+    map_size_h_m: float
+    output_folder: str = ""
 
     @model_validator(mode='after')
     def validate_map_bounds(self) -> 'MapBaseRequest':
@@ -71,6 +74,20 @@ class MapBaseRequest(BaseModel):
         import re
         if not re.match(r'^EPSG:\d+$|^Brez$', v):
             raise ValueError('Koordinatni sistem je napačen (EPSG:xxxx ali Brez)')
+        return v
+
+    @field_validator('map_size_w_m')
+    @classmethod
+    def validate_map_size_w(cls, v: float) -> float:
+        if v > 1:
+            raise ValueError('Velikost karte je prevelika (širina) (max 1m)')
+        return v
+
+    @field_validator('map_size_h_m')
+    @classmethod
+    def validate_map_size_h(cls, v: float) -> float:
+        if v > 1:
+            raise ValueError('Velikost karte je prevelika (višina) (max 1m)')
         return v
 
     @classmethod
@@ -91,13 +108,14 @@ class MapBaseRequest(BaseModel):
             map_n=float(args["map_n"]),
             epsg=epsg,
             raster_type=raster_type,
-            raster_source=args.get("raster_source", "")
+            raster_source=args.get("raster_source", ""),
+            map_size_w_m=float(args["map_size_w_m"]),
+            map_size_h_m=float(args["map_size_h_m"]),
+            output_folder=args.get("output_folder", "")
         )
 
 
-class MapPreviewRequest(MapBaseRequest):
-    output_file: str = ""
-    
+class MapPreviewRequest(MapBaseRequest):    
     @classmethod
     def from_args(cls, args: Dict[str, Any]):
         """Create instance from command line arguments dictionary"""
@@ -112,13 +130,13 @@ class MapPreviewRequest(MapBaseRequest):
             epsg=base.epsg,
             raster_type=base.raster_type,
             raster_source=base.raster_source,
-            output_file=args.get("output_file", "")
+            map_size_w_m=base.map_size_w_m,
+            map_size_h_m=base.map_size_h_m,
+            output_folder=base.output_folder
         )
 
 
 class MapCreateRequest(MapBaseRequest):
-    map_size_w_m: float
-    map_size_h_m: float
     target_scale: int
     edge_wgs84: bool
     naslov1: str
@@ -127,21 +145,6 @@ class MapCreateRequest(MapBaseRequest):
     slikal: str = ""
     slikad: str = ""
     control_points: ControlPointsConfig
-    output_folder: str = ""
-    
-    @field_validator('map_size_w_m')
-    @classmethod
-    def validate_map_size_w(cls, v: float) -> float:
-        if v > 1:
-            raise ValueError('Velikost karte je prevelika (širina) (max 1m)')
-        return v
-
-    @field_validator('map_size_h_m')
-    @classmethod
-    def validate_map_size_h(cls, v: float) -> float:
-        if v > 1:
-            raise ValueError('Velikost karte je prevelika (višina) (max 1m)')
-        return v
 
     @field_validator('target_scale')
     @classmethod
@@ -192,8 +195,8 @@ class MapCreateRequest(MapBaseRequest):
             epsg=base.epsg,
             raster_type=base.raster_type,
             raster_source=base.raster_source,
-            map_size_w_m=float(args["map_size_w_m"]),
-            map_size_h_m=float(args["map_size_h_m"]),
+            map_size_w_m=base.map_size_w_m,
+            map_size_h_m=base.map_size_h_m,
             target_scale=int(args["target_scale"]),
             edge_wgs84=args["edge_wgs84"].lower() == "true",
             naslov1=args["naslov1"],
@@ -202,7 +205,7 @@ class MapCreateRequest(MapBaseRequest):
             slikal=args.get("slikal", ""),
             slikad=args.get("slikad", ""),
             control_points=control_points_config,
-            output_folder=args.get("output_folder", "")
+            output_folder=base.output_folder
         )
 
 
@@ -223,10 +226,11 @@ def parse_command_line_args(args=None):
     parser.add_argument("--epsg", type=str, help="EPSG code", required=True)
     parser.add_argument("--raster_type", type=str, help="Raster type", required=True)
     parser.add_argument("--raster_source", type=str, help="Raster source path", default="", required=True)
+    parser.add_argument("--map_size_w_m", type=float, help="Map width in meters", required=True)
+    parser.add_argument("--map_size_h_m", type=float, help="Map height in meters", required=True)
+    parser.add_argument("--output_folder", type=str, help="Output folder path",required=True)
     
     # Create map specific arguments
-    parser.add_argument("--map_size_w_m", type=float, help="Map width in meters")
-    parser.add_argument("--map_size_h_m", type=float, help="Map height in meters")
     parser.add_argument("--target_scale", type=int, help="Target scale")
     parser.add_argument("--edge_wgs84", type=str, help="Include WGS84 edge markings")
     parser.add_argument("--naslov1", type=str, help="Primary title")
@@ -235,8 +239,6 @@ def parse_command_line_args(args=None):
     parser.add_argument("--slikal", type=str, help="Left image path", default="")
     parser.add_argument("--slikad", type=str, help="Right image path", default="")
     parser.add_argument("--control_points", type=str, help="Control points as JSON string")
-    parser.add_argument("--output_folder", type=str, help="Output folder path", default="")
-    parser.add_argument("--output_file", type=str, help="Output file path for preview", default="")
     
     if args is None:
         args = sys.argv[1:]

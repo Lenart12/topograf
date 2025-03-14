@@ -24,9 +24,11 @@ export async function POST(event) {
   }
   console.log(`[${validated.id}] Request for map preview`);
 
-  if (fs.existsSync(validated.output_file)) {
+  const output_file = `${validated.output_folder}/map_previews/${validated.id}.png`;
+
+  if (fs.existsSync(output_file)) {
     console.log('Returning cached image');
-    const png = await fs.promises.readFile(validated.output_file);
+    const png = await fs.promises.readFile(output_file);
     return new Response(png, { headers: { 'Content-Type': 'image/png' } });
   }
 
@@ -37,7 +39,7 @@ export async function POST(event) {
 
   try {
     await runCreateMapPy(validated);
-    const png = await fs.promises.readFile(validated.output_file);
+    const png = await fs.promises.readFile(output_file);
     return new Response(png, { headers: { 'Content-Type': 'image/png' } });
   } catch (error) {
     console.error(error);
