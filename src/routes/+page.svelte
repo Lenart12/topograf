@@ -41,6 +41,8 @@
 	let raster_type: RasterType = 'dtk50';
 	let control_points: ControlPoint[] = [];
 
+	$: raster_managed_epsg = raster_type === 'dtk25';
+
 	let cp_default_color: string = '#ff0000';
 	let control_points_size: number = 3;
 
@@ -422,83 +424,6 @@
 						</svelte:fragment>
 						<svelte:fragment slot="content">
 							<div class="space-y-2">
-								<h3 class="h3">Koordinatni sistemi</h3>
-								<div>
-									<label for="epsg">Koordinatni sistem karte</label>
-									<div class="btn-group variant-soft flex-wrap items-stretch">
-										<input
-											hidden
-											type="radio"
-											id="epsg_d96_tm"
-											bind:group={epsg}
-											value="EPSG:3794"
-										/>
-										<label
-											for="epsg_d96_tm"
-											class="p-2"
-											class:variant-filled-primary={epsg == 'EPSG:3794'}>D96/TM (EPSG:3794)</label
-										>
-										<input
-											hidden
-											type="radio"
-											id="epsg_d48_gk"
-											bind:group={epsg}
-											value="EPSG:3912"
-										/>
-										<label
-											for="epsg_d48_gk"
-											class="p-2"
-											class:variant-filled-primary={epsg == 'EPSG:3912'}>D48/GK (EPSG:3912)</label
-										>
-										<input
-											hidden
-											type="radio"
-											id="epsg_slovenia_1996"
-											bind:group={epsg}
-											value="EPSG:8687"
-										/>
-										<label
-											for="epsg_slovenia_1996"
-											class="p-2"
-											class:variant-filled-primary={epsg == 'EPSG:8687'}
-											>Slovenia 1996/ UTM zone 33N (EPSG:8687)</label
-										>
-										<input
-											hidden
-											type="radio"
-											id="epsg_wgs_84"
-											bind:group={epsg}
-											value="EPSG:32633"
-										/>
-										<label
-											for="epsg_wgs_84"
-											class="p-2"
-											class:variant-filled-primary={epsg == 'EPSG:32633'}
-											>WGS 84/ UTM zone 33N (EPSG:32633)</label
-										>
-										<input hidden type="radio" id="epsg_brez" bind:group={epsg} value="Brez" />
-										<label for="epsg_brez" class="p-2" class:variant-filled-primary={epsg == 'Brez'}
-											>Brez</label
-										>
-									</div>
-								</div>
-
-								<div>
-									<label for="edge_wgs84">
-										<p>
-											WGS84 koordinatni sistem na robu {edge_wgs84 ? 'vklopljen' : 'izklopljen'}
-										</p>
-										<div>
-											<SlideToggle
-												name="edge_wgs84"
-												bind:checked={edge_wgs84}
-												rounded="rounded-none"
-												size="sm"
-												active="bg-primary-500"
-											/>
-										</div>
-									</label>
-								</div>
 								<label for="raster_layer">
 									<h3 class="h3">Rasterski sloj</h3>
 									{#if preview_correct}
@@ -550,6 +475,90 @@
 										class="p-2"
 										class:variant-filled-primary={raster_type == ''}>Brez</label
 									>
+								</div>
+
+								<h3 class="h3">Koordinatni sistemi</h3>
+								{#if !raster_managed_epsg}
+									<div>
+										<label for="epsg">Koordinatni sistem karte</label>
+										<div class="btn-group variant-soft flex-wrap items-stretch">
+											<input
+												hidden
+												type="radio"
+												id="epsg_d96_tm"
+												bind:group={epsg}
+												value="EPSG:3794"
+											/>
+											<label
+												for="epsg_d96_tm"
+												class="p-2"
+												class:variant-filled-primary={epsg == 'EPSG:3794'}>D96/TM (EPSG:3794)</label
+											>
+											<input
+												hidden
+												type="radio"
+												id="epsg_d48_gk"
+												bind:group={epsg}
+												value="EPSG:3912"
+											/>
+											<label
+												for="epsg_d48_gk"
+												class="p-2"
+												class:variant-filled-primary={epsg == 'EPSG:3912'}>D48/GK (EPSG:3912)</label
+											>
+											<input
+												hidden
+												type="radio"
+												id="epsg_slovenia_1996"
+												bind:group={epsg}
+												value="EPSG:8687"
+											/>
+											<label
+												for="epsg_slovenia_1996"
+												class="p-2"
+												class:variant-filled-primary={epsg == 'EPSG:8687'}
+												>Slovenia 1996/ UTM zone 33N (EPSG:8687)</label
+											>
+											<input
+												hidden
+												type="radio"
+												id="epsg_wgs_84"
+												bind:group={epsg}
+												value="EPSG:32633"
+											/>
+											<label
+												for="epsg_wgs_84"
+												class="p-2"
+												class:variant-filled-primary={epsg == 'EPSG:32633'}
+												>WGS 84/ UTM zone 33N (EPSG:32633)</label
+											>
+											<input hidden type="radio" id="epsg_brez" bind:group={epsg} value="Brez" />
+											<label
+												for="epsg_brez"
+												class="p-2"
+												class:variant-filled-primary={epsg == 'Brez'}>Brez</label
+											>
+										</div>
+									</div>
+								{:else}
+									<p>Ko je izbran DTK25, je koordinatni sistem karte vedno D48/GK (EPSG:3912)</p>
+								{/if}
+
+								<div>
+									<label for="edge_wgs84">
+										<p>
+											WGS84 koordinatni sistem na robu {edge_wgs84 ? 'vklopljen' : 'izklopljen'}
+										</p>
+										<div>
+											<SlideToggle
+												name="edge_wgs84"
+												bind:checked={edge_wgs84}
+												rounded="rounded-none"
+												size="sm"
+												active="bg-primary-500"
+											/>
+										</div>
+									</label>
 								</div>
 							</div>
 						</svelte:fragment>

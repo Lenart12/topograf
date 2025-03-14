@@ -76,6 +76,12 @@ class MapBaseRequest(BaseModel):
     @classmethod
     def from_args(cls, args: Dict[str, Any]):
         """Create instance from command line arguments dictionary"""
+
+        raster_type = args["raster_type"]
+        epsg = args["epsg"]
+        if raster_type == RasterType.DTK25:
+            epsg = "EPSG:3912"
+
         return cls(
             id=args.get("id", ""),
             request_type=args["request_type"],
@@ -83,8 +89,8 @@ class MapBaseRequest(BaseModel):
             map_s=float(args["map_s"]),
             map_e=float(args["map_e"]),
             map_n=float(args["map_n"]),
-            epsg=args["epsg"],
-            raster_type=args["raster_type"],
+            epsg=epsg,
+            raster_type=raster_type,
             raster_source=args.get("raster_source", "")
         )
 

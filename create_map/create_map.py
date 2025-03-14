@@ -155,7 +155,7 @@ def get_raster_map_tiles(tiles_url: str, bounds: tuple[float]):
     except Exception as e:
         raise ValueError(f'Failed to get raster map tiles: {e}')
 
-def get_raster_map(raster_folder: str, bounds: tuple[float]):
+def get_raster_map(raster_type: dto.RasterType, raster_folder: str, bounds: tuple[float]):
     """
     Merges all the raster files in the folder that intersect with the given bounds.
 
@@ -180,6 +180,20 @@ def get_raster_map(raster_folder: str, bounds: tuple[float]):
         np.save(raster_cache_fn, mosaic)
         logger.info(f'Created raster mosaic. - ({bounds_hash} - {mosaic.shape})')
         return mosaic
+    
+    crs_from = pyproj.CRS.from_epsg(3794)
+
+    if raster_type == dto.RasterType.DTK25:
+        crs_to = pyproj.CRS.from_epsg(3912)
+    elif raster_type == dto.RasterType.DTK50:
+        crs_to = pyproj.CRS.from_epsg(3794)
+    else:
+        raise ValueError('Invalid raster type.')
+    
+    transformer = pyproj.Transformer.from_crs(crs_from, crs_to)
+    west, south = transformer.transform(bounds[0], bounds[1])
+    east, north = transformer.transform(bounds[2], bounds[3])
+    bounds = (west, south, east, north)
 
     raster_bounds = get_raster_map_bounds(raster_folder)
     selected_files = []
@@ -218,7 +232,7 @@ def deg_to_deg_min_sec(deg, precision=0):
       s = int((deg - d - m / 60) * 3600)
     return f'{d}°{m:02}\'{s:02}"'
 
-def get_grid_and_map(map_size_m: tuple[float], map_bounds: tuple[float], raster_folder: str):
+def get_grid_and_map(map_size_m: tuple[float], map_bounds: tuple[float], raster_type: dto.RasterType, raster_folder: str):
     """
     Returns the map image, the grid image, and the transformers for converting between the map and the world.
 
@@ -251,7 +265,7 @@ def get_grid_and_map(map_size_m: tuple[float], map_bounds: tuple[float], raster_
 
     # Get the raster map
     if raster_folder != '':
-        grid_raster = get_raster_map(raster_folder, map_bounds)
+        grid_raster = get_raster_map(raster_type, raster_folder, map_bounds)
         grid_img = Image.fromarray(rasterio.plot.reshape_as_image(grid_raster), 'RGB').resize(grid_size_px)
     else:
         logger.info('Skipping raster map.')
@@ -339,7 +353,7 @@ def draw_grid(map_img, grid_img, map_to_world_tr, grid_to_world_tr, real_to_map_
         def draw_grid_line(x0, y0, x1, y1, line_dir):
             x0, y0, x1, y1 = int(x0), int(y0), int(x1), int(y1)
             if line_dir == 'x':
-                assert(x0 == x1)
+                assert(abs(x0 - x1) <= 1)
                 for y in range(int(y0), int(y1)):
                     if should_draw_grid_line(x0, y, line_dir):
                         map_draw.line((x0 - 1, y, x0 + 1, y), fill='black')
@@ -350,7 +364,7 @@ def draw_grid(map_img, grid_img, map_to_world_tr, grid_to_world_tr, real_to_map_
                         map_draw.line((x0 - 1, y, x0 + 1, y), fill=col)
 
             elif line_dir == 'y':
-                assert(y0 == y1)
+                assert(abs(y0 - y1) <= 1)
                 for x in range(int(x0), int(x1)):
                     if should_draw_grid_line(x, y0, line_dir):
                         map_draw.line((x, y0 - 1, x, y0 + 1), fill='black')
@@ -832,9 +846,9 @@ def draw_markings(map_img, bbox, naslov1, naslov2, dodatno, slikal, slikad, epsg
         map_source_p0[1] -= map_info_font.getbbox(txt)[3]
 
         
-def get_preview_image(bounds, epsg, raster_folder):
+def get_preview_image(bounds, epsg, raster_type, raster_folder):
     if raster_folder != '':
-        grid_raster = get_raster_map(raster_folder, bounds)
+        grid_raster = get_raster_map(raster_type, raster_folder, bounds)
         grid_img = Image.fromarray(rasterio.plot.reshape_as_image(grid_raster), 'RGB')
     else:
         target_pxpm = 1 / 4 # 4m resolution
@@ -903,7 +917,7 @@ def get_preview_image(bounds, epsg, raster_folder):
 
     return grid_img
 
-def create_control_point_report(control_point_settings: dto.ControlPointsConfig, raster_folder, title, output_file):
+def create_control_point_report(control_point_settings: dto.ControlPointsConfig, raster_type, raster_folder, title, output_file):
     cps = control_point_settings.cps
     cp_count = len(cps)
     if cp_count == 0:
@@ -988,7 +1002,7 @@ def create_control_point_report(control_point_settings: dto.ControlPointsConfig,
             cp.e + CP_REPORT_PREVIEW_SIZE_RADIUS_M,
             cp.n + CP_REPORT_PREVIEW_SIZE_RADIUS_M
         )
-        cp_preview_raster = get_raster_map(raster_folder, cp_preview_bounds)
+        cp_preview_raster = get_raster_map(raster_type, raster_folder, cp_preview_bounds)
         cp_preview_img = Image.fromarray(rasterio.plot.reshape_as_image(cp_preview_raster), 'RGB')
         cp_preview_img = cp_preview_img.resize(cp_preview_size_px)
 
@@ -1021,20 +1035,20 @@ def create_map(r: dto.MapCreateRequest):
 
     logger.info(f'Creating map: {r.id} - {r.naslov1} {r.naslov2}')
 
-    if os.path.exists(output_file):
+    if os.path.exists(output_file) and USE_CACHE:
         logger.info(f'Map exists (nothing to do). - ({output_file})')
         return
     
     os.makedirs(os.path.dirname(output_file), exist_ok=True)
 
-    map_img, grid_img, map_to_world_tr, grid_to_world_tr, real_to_map_tr, map_to_grid = get_grid_and_map((r.map_size_w_m, r.map_size_h_m), (r.map_w, r.map_s, r.map_e, r.map_n), r.raster_source)
-    
+    map_img, grid_img, map_to_world_tr, grid_to_world_tr, real_to_map_tr, map_to_grid = get_grid_and_map((r.map_size_w_m, r.map_size_h_m), (r.map_w, r.map_s, r.map_e, r.map_n), r.raster_type, r.raster_source)
+
     border_bottom = draw_grid(map_img, grid_img, map_to_world_tr, grid_to_world_tr, real_to_map_tr, r.epsg, r.edge_wgs84, map_to_grid)
 
     if len(r.control_points.cps) > 0:
         draw_control_points(map_img, map_to_world_tr, r.control_points)
         cp_title = f'Kontrolne točke - {r.naslov1} {r.naslov2}'
-        create_control_point_report(r.control_points, r.raster_source, cp_title, output_cp_report)
+        create_control_point_report(r.control_points, r.raster_type, r.raster_source, cp_title, output_cp_report)
 
     markings_bbox = (
         GRID_MARGIN_M[3],
@@ -1063,7 +1077,7 @@ def map_preview(r: dto.MapPreviewRequest):
     logger.info(f'Creating map preview. ({r.map_w}, {r.map_s}, {r.map_e}, {r.map_n}, {r.epsg}, {r.raster_source})')
     bounds = (r.map_w, r.map_s, r.map_e, r.map_n)
     
-    grid_img = get_preview_image(bounds, r.epsg, r.raster_source)
+    grid_img = get_preview_image(bounds, r.epsg, r.raster_type, r.raster_source)
 
     grid_img.save(r.output_file, dpi=(TARGET_DPI, TARGET_DPI))
 
