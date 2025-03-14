@@ -295,7 +295,7 @@ def get_grid_and_map(map_size_m: tuple[float], map_bounds: tuple[float], raster_
     return map_img, grid_img, add_colrow_to_transformer(map_to_world_tr), add_colrow_to_transformer(grid_to_world_tr), add_colrow_to_transformer(real_to_map_tr), map_to_grid
 
 
-def draw_grid(map_img, grid_img, map_to_world_tr, grid_to_world_tr, real_to_map_tr, epsg, edge_wgs84, map_to_grid):
+def draw_grid(map_img, grid_img, map_to_world_tr, grid_to_world_tr, real_to_map_tr, raster_type, epsg, edge_wgs84, map_to_grid):
     map_draw = ImageDraw.Draw(map_img)
     
     # Draw grid on the map
@@ -351,30 +351,35 @@ def draw_grid(map_img, grid_img, map_to_world_tr, grid_to_world_tr, real_to_map_
 
             return True
 
+        auto_darken = True
+        # DTK25 has baked in grid lines, so we just repaint them
+        if raster_type == dto.RasterType.DTK25:
+            auto_darken = False
+
         # Draw grid lines on the map
         def draw_grid_line(x0, y0, x1, y1, line_dir):
             x0, y0, x1, y1 = int(x0), int(y0), int(x1), int(y1)
             if line_dir == 'x':
                 assert(abs(x0 - x1) <= 1)
                 for y in range(int(y0), int(y1)):
-                    if should_draw_grid_line(x0, y, line_dir):
-                        map_draw.line((x0 - 1, y, x0 + 1, y), fill='black')
+                    if not auto_darken or should_draw_grid_line(x0, y, line_dir):
+                        map_draw.line((x0, y, x0 + 1, y), fill='black')
                     else:
                         # Darken the pixel
                         col = grid_img.getpixel(map_to_grid(x0, y))
                         col = (max(0, col[0] - 90), max(0, col[1] - 90), max(0, col[2] - 90))              
-                        map_draw.line((x0 - 1, y, x0 + 1, y), fill=col)
+                        map_draw.line((x0, y, x0 + 1, y), fill=col)
 
             elif line_dir == 'y':
                 assert(abs(y0 - y1) <= 1)
                 for x in range(int(x0), int(x1)):
-                    if should_draw_grid_line(x, y0, line_dir):
-                        map_draw.line((x, y0 - 1, x, y0 + 1), fill='black')
+                    if not auto_darken or should_draw_grid_line(x, y0, line_dir):
+                        map_draw.line((x, y0, x, y0 + 1), fill='black')
                     else:
                         # Darken the pixel
                         col = grid_img.getpixel(map_to_grid(x, y0))
                         col = (max(0, col[0] - 90), max(0, col[1] - 90), max(0, col[2] - 90))
-                        map_draw.line((x, y0 - 1, x, y0 + 1), fill=col)
+                        map_draw.line((x, y0, x, y0 + 1), fill=col)
 
         superscript_map = {
             "0": "", "1": "¹", "2": "²", "3": "³", "4": "⁴", "5": "⁵", "6": "⁶", "7": "⁷", "8": "⁸", "9": "⁹"}
@@ -1072,7 +1077,7 @@ def create_map(r: dto.MapCreateRequest):
 
     map_img, grid_img, map_to_world_tr, grid_to_world_tr, real_to_map_tr, map_to_grid = get_grid_and_map((r.map_size_w_m, r.map_size_h_m), (r.map_w, r.map_s, r.map_e, r.map_n), r.raster_type, r.raster_source)
 
-    border_bottom = draw_grid(map_img, grid_img, map_to_world_tr, grid_to_world_tr, real_to_map_tr, r.epsg, r.edge_wgs84, map_to_grid)
+    border_bottom = draw_grid(map_img, grid_img, map_to_world_tr, grid_to_world_tr, real_to_map_tr, r.raster_type, r.epsg, r.edge_wgs84, map_to_grid)
 
     if len(r.control_points.cps) > 0:
         draw_control_points(map_img, map_to_world_tr, r.control_points)
