@@ -377,7 +377,7 @@ def draw_grid(map_img, grid_img, map_to_world_tr, grid_to_world_tr, real_to_map_
                         map_draw.line((x, y0 - 1, x, y0 + 1), fill=col)
 
         superscript_map = {
-            "0": "⁰", "1": "¹", "2": "²", "3": "³", "4": "⁴", "5": "⁵", "6": "⁶", "7": "⁷", "8": "⁸", "9": "⁹"}
+            "0": "", "1": "¹", "2": "²", "3": "³", "4": "⁴", "5": "⁵", "6": "⁶", "7": "⁷", "8": "⁸", "9": "⁹"}
 
         grid_edge_ws = grid_to_world_tr.xy(grid_img.size[1], 0)
         grid_edge_en = grid_to_world_tr.xy(0, grid_img.size[0])
@@ -394,7 +394,10 @@ def draw_grid(map_img, grid_img, map_to_world_tr, grid_to_world_tr, real_to_map_
             xline_n = map_to_world_tr.colrow(*cs_to_from_tr.transform(x, grid_edge_en[1]))
             draw_grid_line(xline_n[0], xline_n[1], xline_s[0], xline_s[1] - 1, 'x')
             cord = f'{int(x):06}'
-            txt = f'{superscript_map[cord[-6]]}{cord[-5:-3]}'
+            if x == grid_edge_ws_grid[0] or x == grid_edge_en_grid[0] - 1000:
+                txt = f'{superscript_map[cord[-6]]}{cord[-5:-3]}'
+            else:
+                txt = f'{cord[-5:-3]}'
             map_draw.text((xline_s[0], xline_s[1] + 5), txt, fill='black', align='center', anchor='mt', font=grid_font)
             map_draw.text((xline_n[0], xline_n[1] - 5), txt, fill='black', align='center', anchor='ms', font=grid_font)
 
@@ -403,7 +406,10 @@ def draw_grid(map_img, grid_img, map_to_world_tr, grid_to_world_tr, real_to_map_
             yline_e = map_to_world_tr.colrow(*cs_to_from_tr.transform(grid_edge_en[0], y))
             draw_grid_line(yline_w[0], yline_w[1], yline_e[0] - 1, yline_e[1], 'y')
             cord = f'{int(y):06}'
-            txt = f'{superscript_map[cord[-6]]}{cord[-5:-3]}'
+            if y == grid_edge_ws_grid[1] or y == grid_edge_en_grid[1] - 1000:
+                txt = f'{superscript_map[cord[-6]]}{cord[-5:-3]}'
+            else:
+                txt = f'{cord[-5:-3]}'
             map_draw.text((yline_w[0] - 5, yline_w[1]), txt, fill='black', align='center', anchor='rm', font=grid_font)
             map_draw.text((yline_e[0] + 5, yline_e[1]), txt, fill='black', align='center', anchor='lm', font=grid_font)
 
