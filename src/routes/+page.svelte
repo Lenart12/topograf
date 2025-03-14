@@ -570,6 +570,16 @@
 							</h3>
 						</svelte:fragment>
 						<svelte:fragment slot="content">
+							<div class="card p-4 mb-4">
+								<h4>
+									<iconify-icon icon="mdi:alert-circle"></iconify-icon> Opozorilo
+								</h4>
+								<p class="small">
+									Določanje KT je še vedno v izdelavi, zato lahko pride do kašnih napak - prevsem
+									pri spremenjanju vrstnega reda in odstranjanju KT. V primeru težav, osveži stran,
+									oz. odstrani vse KT in jih ponovno dodaj.
+								</p>
+							</div>
 							<MapPreview
 								bind:map_w
 								bind:map_s
@@ -588,9 +598,7 @@
 								bind:remove_cp
 								bind:swap_cp
 							/>
-							<h3 class="h3">Kontrolne točke (V IZDELAVI - NI STABILNO ALI 100%)</h3>
-
-							<div class="flex flex-col gap-2">
+							<div class="flex flex-col gap-2 mt-4">
 								<div class="flex flex-row gap-2">
 									<label for="control_points_size">Polmer kontrolnih točk (mm)</label>
 									<input
@@ -603,7 +611,7 @@
 								</div>
 
 								<div class="flex flex-row gap-2 items-center">
-									<label for="cp_color_default">Privzeta barva:</label>
+									<label for="cp_color_default">Barva novih točk:</label>
 									<input
 										class="input !rounded-full !h-6 !w-6"
 										id="cp_color_default"
@@ -613,10 +621,15 @@
 								</div>
 
 								{#if control_points.length === 0}
-									<p class="lead">Dodaj nove kontrolne točke s klikom na zemljevid.</p>
+									<div class="card p-4">
+										<h4 class="h4">
+											<iconify-icon icon="mdi:info"></iconify-icon> Ni kontrolnih točk
+										</h4>
+										<p class="lead">Dodaj nove kontrolne točke s klikom na zemljevid.</p>
+									</div>
 								{/if}
 
-								<Accordion regionControl="variant-soft" regionPanel="variant-soft">
+								<Accordion regionControl="bg-surface-800" regionPanel="bg-surface-700">
 									{#each control_points as cp, i (cp.id)}
 										{@const cp_count = control_points.length}
 										{@const is_first = i === 0}
