@@ -3,6 +3,7 @@ import { RateLimiter } from 'sveltekit-rate-limiter/server';
 import { MapCreateRequest } from '$lib/api/validation.js';
 import { runCreateMapPy } from '$lib/api/execute.js';
 import { TEMP_FOLDER } from '$env/static/private';
+import { dev } from '$app/environment';
 
 const limiter = new RateLimiter({
   IP: [10, 'h'],
@@ -32,8 +33,10 @@ export async function POST(event) {
     return new Response(validated.id);
   }
 
-  if (await limiter.isLimited(event))
-    return new Response("Preveč zahtev", { status: 429 });
+  if (await limiter.isLimited(event)) {
+    if (dev) console.log('Rate limited');
+    else return new Response("Preveč zahtev", { status: 429 });
+  }
 
   try {
     await runCreateMapPy(validated);
