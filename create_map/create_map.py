@@ -185,8 +185,10 @@ def get_raster_map(raster_type: dto.RasterType, raster_folder: str, bounds: tupl
 
     if raster_type == dto.RasterType.DTK25:
         crs_to = pyproj.CRS.from_epsg(3912)
+        max_files = 6
     elif raster_type == dto.RasterType.DTK50:
         crs_to = pyproj.CRS.from_epsg(3794)
+        max_files = 4
     else:
         raise ValueError('Invalid raster type.')
     
@@ -206,7 +208,7 @@ def get_raster_map(raster_type: dto.RasterType, raster_folder: str, bounds: tupl
     if len(selected_files) == 0:
         raise ValueError('No raster files intersect with the given bounds.')
     
-    if len(selected_files) > 4:
+    if len(selected_files) > max_files:
         raise ValueError('Too many raster files intersect with the given bounds. Please select a smaller area.')
 
     src_files_to_mosaic = []
