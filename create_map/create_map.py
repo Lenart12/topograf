@@ -523,9 +523,9 @@ def draw_control_points(map_img, map_to_world_tr, control_point_settings: dto.Co
 
     m_to_px = lambda m: m * TARGET_DPI / 0.0254 * map_supersample
 
-    cp_lines_width_px = int(m_to_px(0.0005)) # 1mm width
-    cp_size_px = cp_lines_width_px + m_to_px(cp_size_real) # 3mm size (plus the width of the lines)
-    cp_dot_size_px = m_to_px(0.0005) # 0.5mm size 
+    cp_lines_width_px = int(m_to_px(0.0003)) # Line width in m
+    cp_size_px = cp_lines_width_px + m_to_px(cp_size_real) # Total size of the control point
+    cp_dot_size_px = m_to_px(0.0003) # 0.3mm size 
 
     cp_count = len(control_points)
     
@@ -544,71 +544,101 @@ def draw_control_points(map_img, map_to_world_tr, control_point_settings: dto.Co
     def prev_cp(i):
         return control_points[(i - 1) % cp_count]
     
-    def calculate_label_position(i, cp: dto.ControlPointOptions, label_distance_factor=1.5):
-        # Skip if we don't have enough points for angle calculation
-        if cp_count < 3:
-            return cp.x, cp.y - cp_size_px * label_distance_factor
+    def cp_radius(cp, theta):
+        if cp.kind == dto.ControlPointKind.TRIANGLE:
+            return (cp_size_px - cp_lines_width_px / 2) / (2 * math.cos(math.acos(math.sin(3*(theta + math.pi)))/3)) # Circumradius of a triangle
+        elif cp.kind == dto.ControlPointKind.DOT:
+            return cp_dot_size_px * 2 # Add some margin to the dot
+        elif cp.kind == dto.ControlPointKind.POINT:
+            return 0
+        return cp_size_px
+    
+    def calculate_label_position(i, cp: dto.ControlPointOptions, outer_label_distance = 0.3 * cp_size_px):
+        if cp_count <= 1:
+            return cp.x, cp.y + cp_size_px + outer_label_distance, 'mt'
         
         cp_curr = cp
-        cp_prev = prev_cp(i)
-        cp_next = next_cp(i)
         
-        # Calculate vectors from current CP to previous and next CPs
-        vec_to_prev = (cp_prev.x - cp_curr.x, cp_prev.y - cp_curr.y)
-        vec_to_next = (cp_next.x - cp_curr.x, cp_next.y - cp_curr.y)
-        
-        # Normalize vectors
-        prev_len = math.sqrt(vec_to_prev[0]**2 + vec_to_prev[1]**2)
-        next_len = math.sqrt(vec_to_next[0]**2 + vec_to_next[1]**2)
-        
-        if prev_len == 0 or next_len == 0:
-            return cp.x, cp.y - cp_size_px * label_distance_factor
-        
-        prev_norm = (vec_to_prev[0]/prev_len, vec_to_prev[1]/prev_len)
-        next_norm = (vec_to_next[0]/next_len, vec_to_next[1]/next_len)
-        
-        # Sum the normalized vectors and negate to get the outside bisector
-        bisector_x = -(prev_norm[0] + next_norm[0])
-        bisector_y = -(prev_norm[1] + next_norm[1])
-        
-        # Normalize the bisector
-        bisector_len = math.sqrt(bisector_x**2 + bisector_y**2)
-        if bisector_len == 0:
-            # If the bisector is zero length (straight line), use perpendicular
-            bisector_x = -next_norm[1]
-            bisector_y = next_norm[0]
-            bisector_len = 1.0
-        
+        if cp_count == 2: # Only 2 control points, use straight line
+            cp_next = next_cp(i)
+            bisector_x = cp_curr.x - cp_next.x
+            bisector_y = cp_curr.y - cp_next.y
+
+            # Normalize the bisector
+            bisector_len = math.sqrt(bisector_x**2 + bisector_y**2)
+            if bisector_len == 0:
+                return cp.x, cp.y + cp_size_px + outer_label_distance, 'mt'
+        else: # More than 2 control points, calculate bisector
+            cp_prev = prev_cp(i)
+            cp_next = next_cp(i)
+            
+            # Calculate vectors from current CP to previous and next CPs
+            vec_to_prev = (cp_prev.x - cp_curr.x, cp_prev.y - cp_curr.y)
+            vec_to_next = (cp_next.x - cp_curr.x, cp_next.y - cp_curr.y)
+            
+            # Normalize vectors
+            prev_len = math.sqrt(vec_to_prev[0]**2 + vec_to_prev[1]**2)
+            next_len = math.sqrt(vec_to_next[0]**2 + vec_to_next[1]**2)
+            
+            if prev_len == 0 or next_len == 0:
+                return cp.x, cp.y + cp_size_px + outer_label_distance, 'mt'
+            
+            prev_norm = (vec_to_prev[0]/prev_len, vec_to_prev[1]/prev_len)
+            next_norm = (vec_to_next[0]/next_len, vec_to_next[1]/next_len)
+            
+            # Sum the normalized vectors and negate to get the outside bisector
+            bisector_x = -(prev_norm[0] + next_norm[0])
+            bisector_y = -(prev_norm[1] + next_norm[1])
+            
+            # Normalize the bisector
+            bisector_len = math.sqrt(bisector_x**2 + bisector_y**2)
+            if bisector_len == 0:
+                # If the bisector is zero length (straight line), use perpendicular
+                bisector_x = -next_norm[1]
+                bisector_y = next_norm[0]
+                bisector_len = 1.0
+            
         bisector_x /= bisector_len
         bisector_y /= bisector_len
         
+        angle = math.degrees(math.atan2(-bisector_y, bisector_x))
+
         # Calculate label position at a distance from the control point
-        label_distance = cp_size_px * label_distance_factor
+        label_distance = cp_radius(cp, math.atan2(bisector_y, bisector_x)) + outer_label_distance
         label_x = cp.x + bisector_x * label_distance
         label_y = cp.y + bisector_y * label_distance
 
-        angle = math.degrees(math.atan2(-bisector_y, bisector_x))
-    
-        # Determine anchor based on 8 directional segments
-        if -22.5 <= angle <= 22.5:         # East
-            anchor = 'lm'
-        elif 22.5 < angle <= 67.5:         # North-East
-            anchor = 'lb'
-        elif 67.5 < angle <= 112.5:        # North
-            anchor = 'mb'
-        elif 112.5 < angle <= 157.5:       # North-West
-            anchor = 'rb'
-        elif angle > 157.5 or angle <= -157.5:  # West
-            anchor = 'rm'
-        elif -157.5 < angle <= -112.5:     # South-West
-            anchor = 'rt'
-        elif -112.5 < angle <= -67.5:      # South
-            anchor = 'mt'
-        elif -67.5 < angle <= -22.5:       # South-East
-            anchor = 'lt'
+        # Determine anchor based on direction and kind of the control point
+        if cp.kind == dto.ControlPointKind.TRIANGLE:
+            # Determine anchor based on which side of the triangle the label is on
+            # Cornes of the triangle are top, diagonal left, diagonal right
+            if angle >= -150 and angle <= -30:
+                anchor = 'mt'
+            elif angle < -150 or angle > 90:
+                anchor = 'rb'
+            else:
+                anchor = 'lb'
         else:
-          # Fallback (should not happen)
-          anchor = 'mm'
+            # Determine anchor based on 8 directional segments
+            if -22.5 <= angle <= 22.5:         # East
+                anchor = 'lm'
+            elif 22.5 < angle <= 67.5:         # North-East
+                anchor = 'lb'
+            elif 67.5 < angle <= 112.5:        # North
+                anchor = 'mb'
+            elif 112.5 < angle <= 157.5:       # North-West
+                anchor = 'rb'
+            elif angle > 157.5 or angle <= -157.5:  # West
+                anchor = 'rm'
+            elif -157.5 < angle <= -112.5:     # South-West
+                anchor = 'rt'
+            elif -112.5 < angle <= -67.5:      # South
+                anchor = 'mt'
+            elif -67.5 < angle <= -22.5:       # South-East
+                anchor = 'lt'
+            else:
+                # Fallback (should not happen)
+                anchor = 'mm'
         
         return label_x, label_y, anchor
     
@@ -633,17 +663,8 @@ def draw_control_points(map_img, map_to_world_tr, control_point_settings: dto.Co
         theta = math.atan2(to_cp.y - from_cp.y, to_cp.x - from_cp.x)
         theta_rev = theta - math.pi
 
-        def cp_radius(cp, theta=theta):
-            if cp.kind == dto.ControlPointKind.TRIANGLE:
-                return (cp_size_px - cp_lines_width_px / 2) / (2 * math.cos(math.acos(math.sin(3*(theta + math.pi)))/3)) # Circumradius of a triangle
-            elif cp.kind == dto.ControlPointKind.DOT:
-                return cp_dot_size_px * 2 # Add some margin to the dot
-            elif cp.kind == dto.ControlPointKind.POINT:
-                return 0
-            return cp_size_px
-
-        from_x = from_cp.x + cp_radius(from_cp) * math.cos(theta)
-        from_y = from_cp.y + cp_radius(from_cp) * math.sin(theta)
+        from_x = from_cp.x + cp_radius(from_cp, theta) * math.cos(theta)
+        from_y = from_cp.y + cp_radius(from_cp, theta) * math.sin(theta)
         to_x = to_cp.x - cp_radius(to_cp, theta_rev) * math.cos(theta)
         to_y = to_cp.y - cp_radius(to_cp, theta_rev) * math.sin(theta)
 
@@ -661,7 +682,7 @@ def draw_control_points(map_img, map_to_world_tr, control_point_settings: dto.Co
               (x - cp_dot_size_px, y - cp_dot_size_px, x + cp_dot_size_px, y + cp_dot_size_px),
               fill=cp.color)
         
-        if cp.connect_next:
+        if cp.connect_next and cp_count > 1:
             draw_line(cp, next_cp(i))
 
         if cp.kind == dto.ControlPointKind.TRIANGLE:
