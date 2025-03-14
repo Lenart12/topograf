@@ -123,9 +123,9 @@ def get_raster_map_tiles(tiles_url: str, bounds: tuple[float]):
     logger.info(f'Getting raster map tiles. - ({bounds_3857})')
     try:
         # Download the tiles
-        mosaic_web, extent_web = contextily.bounds2img(*bounds_3857, source=tiles_url)
+        mosaic_web, extent_web = contextily.bounds2img(*bounds_3857, source=tiles_url, zoom_adjust=1)
         # Warp the tiles to EPSG:3794
-        mosaic_d96, extent_d96 = contextily.warp_tiles(mosaic_web, extent_web, 'EPSG:3794', rasterio.enums.Resampling.nearest)
+        mosaic_d96, extent_d96 = contextily.warp_tiles(mosaic_web, extent_web, 'EPSG:3794', rasterio.enums.Resampling.lanczos)
 
         # Crop the tiles to the bounds
         bands = mosaic_d96.shape[2]
@@ -266,7 +266,7 @@ def get_grid_and_map(map_size_m: tuple[float], map_bounds: tuple[float], raster_
     # Get the raster map
     if raster_folder != '':
         grid_raster = get_raster_map(raster_type, raster_folder, map_bounds)
-        grid_img = Image.fromarray(rasterio.plot.reshape_as_image(grid_raster), 'RGB').resize(grid_size_px)
+        grid_img = Image.fromarray(rasterio.plot.reshape_as_image(grid_raster), 'RGB').resize(grid_size_px, resample=Image.Resampling.LANCZOS)
     else:
         logger.info('Skipping raster map.')
         grid_img = Image.new('RGB', grid_size_px, 0xFFFFFF)
