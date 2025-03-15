@@ -19,6 +19,7 @@ import numpy as np
 import logging
 import contextily
 import dto
+import img2pdf
 
 ### STATIC CONFIGURATION ###
 
@@ -1102,8 +1103,16 @@ def create_map(r: dto.MapCreateRequest):
     draw_markings(map_img, markings_bbox, r.naslov1, r.naslov2, r.dodatno, r.slikal, r.slikad, r.epsg, r.edge_wgs84, r.target_scale, r.raster_type, real_to_map_tr)
 
     logger.info(f'Saving map to: {output_file}')
-    map_img.save(output_file, dpi=(TARGET_DPI, TARGET_DPI), author=PDF_AUTHOR)
-
+    # Save the map using img2pdf (PIL uses JPEG compression for PDFs)
+    with tempfile.TemporaryFile() as tf:
+        map_img.save(tf, format='png', dpi=(TARGET_DPI, TARGET_DPI), optimize=True)
+        tf.seek(0)
+        with open(output_file, 'wb') as f:
+            f.write(img2pdf.convert(
+                tf,
+                author=PDF_AUTHOR,
+                creator=PDF_AUTHOR
+            ))
     
     # Save the configuration (remove full paths)
     r.output_folder = os.path.basename(r.output_folder)
