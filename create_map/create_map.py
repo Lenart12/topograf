@@ -1,4 +1,4 @@
-from PIL import Image, ImageDraw, ImageFont
+from PIL import Image, ImageDraw, ImageFont, ImageFilter
 import sys
 import math
 import json
@@ -535,7 +535,7 @@ def draw_control_points(map_img, map_to_world_tr, control_point_settings: dto.Co
 
     m_to_px = lambda m: m * TARGET_DPI / 0.0254 * map_supersample
 
-    cp_lines_width_px = int(m_to_px(0.0003)) # Line width in m
+    cp_lines_width_px = int(m_to_px(0.0004)) # Line width in m
     cp_size_px = cp_lines_width_px + m_to_px(cp_size_real) # Total size of the control point
     cp_dot_size_px = m_to_px(0.0003) # 0.3mm size 
 
@@ -652,7 +652,7 @@ def draw_control_points(map_img, map_to_world_tr, control_point_settings: dto.Co
                 # Fallback (should not happen)
                 anchor = 'mm'
         
-        return label_x, label_y, anchor
+        return int(label_x), int(label_y), anchor
     
     def draw_triangle_cp(x, y, col):
         cp_draw.polygon([
@@ -682,6 +682,21 @@ def draw_control_points(map_img, map_to_world_tr, control_point_settings: dto.Co
 
         cp_draw.line((from_x, from_y, to_x, to_y), fill=from_cp.color_line, width=cp_lines_width_px)
 
+    def draw_name(x, y, anchor, name, color):
+        # Create a blurred shadow of the text
+        text_size = cp_font.getbbox(name, anchor='lt')
+        blur_radius = 10
+        img_blur = Image.new('L', (text_size[2] + blur_radius * 2, text_size[3] + blur_radius * 2))
+        draw_blur = ImageDraw.Draw(img_blur)
+        draw_blur.text((blur_radius, blur_radius), name, fill='white', font=cp_font, anchor='lt')
+        img_blur = img_blur.filter(ImageFilter.GaussianBlur(blur_radius/2))
+        dst_box = cp_font.getbbox(name, anchor=anchor)
+        img_shadow = Image.new('L', img_blur.size, 128)
+        cp_img.paste(img_shadow, (x - blur_radius + dst_box[0], y - blur_radius + dst_box[1]), mask=img_blur)
+
+        # Draw the text
+        cp_draw.text((x, y), name, fill=color, align='center', anchor=anchor, font=cp_font)
+
     for i, cp in enumerate(control_points):
         if cp.kind == dto.ControlPointKind.SKIP:
             continue
@@ -707,7 +722,7 @@ def draw_control_points(map_img, map_to_world_tr, control_point_settings: dto.Co
             logger.warning(f'Unknown control point kind: {cp.kind}')
 
         label_x, label_y, anchor = calculate_label_position(i, cp)
-        cp_draw.text((label_x, label_y), cp.name, fill=cp.color, align='center', anchor=anchor, font=cp_font)
+        draw_name(label_x, label_y, anchor, cp.name, cp.color)
 
     # Downsample the control points image
     cp_img = cp_img.resize(map_img.size)
