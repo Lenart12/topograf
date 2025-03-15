@@ -5,8 +5,6 @@
 
 	export let data: PageData;
 	let pdf_viewer: HTMLObjectElement;
-	let download_button: HTMLAnchorElement;
-	let download_cp_report_button: HTMLAnchorElement;
 	const title =
 		data.map_config.naslov1 || `Karta za orientacijo ${new Date().toLocaleDateString()}`;
 
@@ -34,42 +32,17 @@
 		pdf_viewer.height = `${pdf_height}px`;
 	};
 
+	let naslovi = [] as String[];
+	if (data.map_config.naslov1) naslovi.push(data.map_config.naslov1);
+	if (data.map_config.naslov2) naslovi.push(data.map_config.naslov2);
+	const naslov = naslovi
+		.join(' - ')
+		.substring(0, 60)
+		.replace(/[^a-zA-Z0-9À-ž\- ]/g, '_');
+
 	onMount(() => {
-		const pdf_blob = new Blob([new Uint8Array(data.map_pdf)], {
-			type: 'application/pdf'
-		});
-		const pdf_url = URL.createObjectURL(pdf_blob);
-		pdf_viewer.data = pdf_url;
-		download_button.href = pdf_url;
-
-		let naslovi = [];
-		if (data.map_config.naslov1) naslovi.push(data.map_config.naslov1);
-		if (data.map_config.naslov2) naslovi.push(data.map_config.naslov2);
-
-		const naslov = naslovi
-			.join(' - ')
-			.substring(0, 60)
-			.replace(/[^a-zA-Z0-9À-ž\- ]/g, '_');
-
-		download_button.download = `${naslov}.pdf`;
-
-		let cp_report_pdf_url = '';
-		if (data.map_cp_report && download_cp_report_button) {
-			const cp_report_pdf_blob = new Blob([new Uint8Array(data.map_cp_report)], {
-				type: 'application/pdf'
-			});
-			cp_report_pdf_url = URL.createObjectURL(cp_report_pdf_blob);
-			download_cp_report_button.href = cp_report_pdf_url;
-			download_cp_report_button.download = `${naslov}_KT.pdf`;
-		}
-
 		pdf_viewer.onload = resize_pdf;
 		window.onresize = resize_pdf;
-
-		return () => {
-			URL.revokeObjectURL(pdf_url);
-			if (cp_report_pdf_url) URL.revokeObjectURL(cp_report_pdf_url);
-		};
 	});
 </script>
 
@@ -87,16 +60,19 @@
 
 			<div class="flex flex-row gap-8 flex-wrap px-4">
 				<div>
-					<a class="btn variant-filled-primary" bind:this={download_button} href="#invalid"
+					<a
+						class="btn variant-filled-primary"
+						href="{data.map_config.id}/map.pdf"
+						download="{naslov}.pdf"
 						>Prenesi<iconify-icon icon="material-symbols:download-2"></iconify-icon></a
 					>
 				</div>
-				{#if data.map_cp_report}
+				{#if data.map_cp_report_exists}
 					<div>
 						<a
 							class="btn variant-filled-primary"
-							bind:this={download_cp_report_button}
-							href="#invalid"
+							href="{data.map_config.id}/cp_report.pdf"
+							download="{naslov}_KT.pdf"
 							>Prenesi kontrolne točke<iconify-icon icon="material-symbols:download-2"
 							></iconify-icon></a
 						>
@@ -121,7 +97,8 @@
 						width="100%"
 						height="600"
 						type="application/pdf"
-						title={data.map_config.naslov1}
+						title={naslov}
+						data="{data.map_config.id}/map.pdf"
 					></object>
 				</div>
 			</div>

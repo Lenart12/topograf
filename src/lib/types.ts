@@ -1,6 +1,7 @@
 import type { MapOptions, Marker, Polyline } from 'leaflet';
 import type { ControlPointOptions } from './api/dto';
 
+// TODO: Update this type to match the actual response from the server
 export type CreatedMapConf = {
   map_size_w_m: number;
   map_size_h_m: number;
@@ -18,6 +19,7 @@ export type CreatedMapConf = {
   slikal: string | null;
   slikad: string | null;
   map_id: string;
+  id: string;
 };
 
 export type GetMapOptions = (L: typeof import('leaflet')) => MapOptions;
