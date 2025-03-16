@@ -33,7 +33,7 @@ export async function POST(event) {
     return new Response(validated.id);
   }
 
-  if (await limiter.isLimited(event)) {
+  if (await limiter.isLimited(event) && false) {
     if (dev) console.log('Rate limited');
     else return new Response("Preveč zahtev", { status: 429 });
   }
