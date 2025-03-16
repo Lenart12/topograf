@@ -1,53 +1,46 @@
 # Topograf
 
-# [https://topograf.scuke.si](https://topograf.scuke.si)
+![Topograf](/res/topograf.png)
 
+#### Preizkusite na: [https://topograf.scuke.si](https://topograf.scuke.si)
 
-### Web interface
-![Predogled](/res/preview.png)
+## Kaj je Topograf?
 
+Topograf je uporabniku prijazno orodje za ustvarjanje lepih topografskih zemljevidov. Ne glede na to, ali načrtujete pohod, orientacijsko tekmovanje, poučujete vrisovanje ali vas le zanima raziskovanje terena, Topograf omogoča enostavno ustvarjanje profesionalnih kartt s prilagodljivimi funkcijami.
 
-### Created maps
+### Primer zemljevida
 
-![Karta](/res/created_preview.png)
+![Vzorčni zemljevid](/res/created_preview.png)
 
+## Kako začeti
 
-## Project Overview
+1. Obiščite [topograf.scuke.si](https://topograf.scuke.si)
+2. Izberite območje, ki vas zanima na zemljevidu
+3. Prilagodite nastavitve zemljevida (stil mreže, oznake, itd.)
+4. Ustvarite in prenesite svoj osebni topografski zemljevid
 
-Topograf is a project designed to create and topographic maps. It utilizes various geospatial libraries and tools to generate maps with detailed grid and marking configurations. The project is structured to handle raster data, generate map previews, and create final map outputs in PDF format.
+## Funkcije
 
+- **Interaktivna izbira območja**: Izberite točno tisto območje, ki ga želite izrisati
+- **Prilagodljiv naslov**: Dodajte naslov in opis svojemu zemljevidu
+- **Prilagodljive mreže**: Dodajte koordinatne mreže v različnih koordinatnih sistemih
+- **Oznake kontrolnih točk**: Poudarite specifične lokacije z lastnimi oznakami
+- **Izvoz v PDF**: Prenesite visokokakovostne zemljevide, pripravljene za tiskanje (A4, A4)
 
-## Key Components
+## Kako deluje
 
-### `create_map/create_map.py`
+Topograf združuje geografske podatke z vašimi nastavitvami za ustvarjanje podrobnih zemljevidov. Sistem obdeluje vaše izbire s pomočjo dveh glavnih komponent:
 
-This script is the core of the map creation process. It includes functions to handle raster data, draw grids, and add markings to the maps. Key functions include:
+Osrednji sistem za generiranje zemljevidov poskrbi za vse tehnične podrobnosti namesto vas - od obdelave geografskih podatkov do risanja končnega zemljevida z vsemi izbranimi funkcijami.
 
-- `create_map(configuration)`: Main function to create a map based on the provided configuration.
-- `get_preview_image(bounds, epsg, raster_folder)`: Generates a preview image of the map.
-- `draw_grid(...)`: Draws the grid on the map.
-- `draw_markings(...)`: Adds markings and annotations to the map.
+### Spletni vmesnik
 
-### `src` Sveltekit page frontend
+Uporabniku prijazen spletni vmesnik vam omogoča:
+- Določitev mej zemljevida
+- Predogled zemljevida pred ustvarjanjem
+- Prilagajanje funkcij in videza zemljevida
+- Dostop in prenos ustvarjenih zemljevidov
 
-Webpage frontend created with the SvelteKit framework. Its routes include
-* `/` Main page index, where maps are created
-* `/maps/[map_id]` Created map output
-* `/api/create_map` Api for creating a map
-* `/api/map_preview` Api for creating map preview (on which controll points will be added)
+### Tiskanje
 
-### Configuration
-
-The project uses a configuration file to manage settings and paths. The `.env.template` file provides a template for the required environment variables.
-
-
-## Dependencies
-
-The `create_map` python script project relies on several Python libraries, including:
-
-* PIL (Pillow) for image processing.
-* pyproj for coordinate transformations.
-* rasterio for handling raster data.
-* shapely for geometric operations.
-
-Frontend dependencies are managed with `npm` and are installed with `npm i` command.
+Zemljevide lahko natisnete na A4 ali A3 formatu, pri tisku bodite pozorni na nastavitve tiskalnika (npr. prilagoditev velikosti zemljevida). Velikost strani naj bo nastavljena na 100% in brez obrezovanja.
