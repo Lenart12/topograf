@@ -26,6 +26,7 @@ Topograf je uporabniku prijazno orodje za ustvarjanje lepih topografskih zemljev
 - **Prilagodljive mreže**: Dodajte koordinatne mreže v različnih koordinatnih sistemih
 - **Oznake kontrolnih točk**: Poudarite specifične lokacije z lastnimi oznakami
 - **Izvoz v PDF**: Prenesite visokokakovostne zemljevide, pripravljene za tiskanje (A4, A4)
+- **Izvoz kontrolnih točk**: Prenesite seznam kontrolnih točk z njihovimi koordinatami in pobližano sliko lokacije
 
 ## Kako deluje
 
