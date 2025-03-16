@@ -1142,7 +1142,7 @@ def map_preview(r: dto.MapPreviewRequest):
 
     grid_img = get_preview_image(bounds, r.epsg, r.raster_type, r.raster_source, *preview_size_m)
 
-    output_file = os.path.join(r.output_folder, f'map_previews/{r.id}.png')
+    output_file = os.path.join(get_cache_dir('map_previews'), f'{r.id}.png')
 
     grid_img.save(output_file, dpi=(TARGET_DPI, TARGET_DPI))
 
