@@ -17,6 +17,7 @@ export async function GET(event) {
     if (file_name.endsWith('.pdf')) return 'application/pdf';
     if (file_name.endsWith('.json')) return 'application/json';
     if (file_name.endsWith('.png')) return 'image/png';
+    if (file_name.endsWith('.webp')) return 'image/webp';
     return 'application/octet-stream';
   })();
 

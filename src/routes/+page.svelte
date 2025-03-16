@@ -6,12 +6,15 @@
 	import type { ControlPoint } from '$lib/types';
 	import { get_cp_name } from '$lib';
 	import { tick } from 'svelte';
+	import type { PageData } from './$types';
 	import {
 		type RasterType,
 		type ControlPointOptions,
 		type ControlPointsConfig,
 		FormatMapCreateRequest
 	} from '$lib/api/dto';
+
+	export let data: PageData;
 
 	// Konfiguracija
 	let velikost: 'a4' | 'a3' = 'a4';
@@ -171,7 +174,33 @@
 </script>
 
 <svelte:head>
-	<title>Topograf - Ustvaro svojo karto</title>
+	<!-- Primary Meta Tags -->
+	<title>Topograf - Ustvari svojo karto</title>
+	<meta name="title" content="Topograf - Ustvari svojo karto" />
+	<meta
+		name="description"
+		content="S Topografom lahko ustvariš svojo topografsko karto za orientacijska tekmovanja"
+	/>
+
+	<!-- Open Graph / Facebook -->
+	<meta property="og:type" content="website" />
+	<meta property="og:url" content={data.request_origin} />
+	<meta property="og:title" content="Topograf - Ustvari svojo karto" />
+	<meta
+		property="og:description"
+		content="S Topografom lahko ustvariš svojo topografsko karto za orientacijska tekmovanja"
+	/>
+	<meta property="og:image" content="{data.request_origin}/topograf-logo.webp" />
+
+	<!-- Twitter -->
+	<meta property="twitter:card" content="summary_large_image" />
+	<meta property="twitter:url" content={data.request_origin} />
+	<meta property="twitter:title" content="Topograf - Ustvari svojo karto" />
+	<meta
+		property="twitter:description"
+		content="S Topografom lahko ustvariš svojo topografsko karto za orientacijska tekmovanja"
+	/>
+	<meta property="twitter:image" content="{data.request_origin}/topograf-logo.webp" />
 </svelte:head>
 
 <main>

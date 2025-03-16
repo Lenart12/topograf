@@ -5,8 +5,6 @@
 
 	export let data: PageData;
 	let pdf_viewer: HTMLObjectElement;
-	const title =
-		data.map_config.naslov1 || `Karta za orientacijo ${new Date().toLocaleDateString()}`;
 
 	type MapPropertyValue = string | number | boolean;
 	type MapProperty = [keyof CreatedMapConf, string, (v: MapPropertyValue) => string];
@@ -32,13 +30,11 @@
 		pdf_viewer.height = `${pdf_height}px`;
 	};
 
-	let naslovi = [] as String[];
-	if (data.map_config.naslov1) naslovi.push(data.map_config.naslov1);
-	if (data.map_config.naslov2) naslovi.push(data.map_config.naslov2);
-	const naslov = naslovi
-		.join(' - ')
-		.substring(0, 60)
-		.replace(/[^a-zA-Z0-9À-ž\- ]/g, '_');
+	const naslovi_parts = [] as String[];
+	if (data.map_config.naslov1) naslovi_parts.push(data.map_config.naslov1);
+	if (data.map_config.naslov2) naslovi_parts.push(data.map_config.naslov2);
+	const naslov = naslovi_parts.join(' - ');
+	const target_filename = naslov.substring(0, 60).replace(/[^a-zA-Z0-9À-ž\- ]/g, '_');
 
 	onMount(() => {
 		pdf_viewer.onload = resize_pdf;
@@ -47,23 +43,42 @@
 </script>
 
 <svelte:head>
-	<title>Topograf - {title}</title>
+	<!-- Primary Meta Tags -->
+	<title>Topograf - {naslov}</title>
+	<meta name="title" content="Topograf - {naslov}" />
+	<meta name="description" content="Topografska karta ustvarjena s Topografom" />
+
+	<!-- Open Graph / Facebook -->
+	<meta property="og:type" content="website" />
+	<meta property="og:url" content="{data.request_origin}/maps/{data.map_config.id}" />
+	<meta property="og:title" content="Topograf - {naslov}" />
+	<meta property="og:description" content="Topografska karta ustvarjena s Topografom" />
+	<meta
+		property="og:image"
+		content="{data.request_origin}/maps/{data.map_config.id}/thumbnail.webp"
+	/>
+
+	<!-- Twitter -->
+	<meta property="twitter:card" content="summary_large_image" />
+	<meta property="twitter:url" content="{data.request_origin}/maps/{data.map_config.id}" />
+	<meta property="twitter:title" content="Topograf - {naslov}" />
+	<meta property="twitter:description" content="Topografska karta ustvarjena s Topografom" />
+	<meta property="twitter:image" content="{data.request_origin}/topograf-logo.webp" />
 </svelte:head>
 
 <main>
 	<div class="container mx-auto p-0 md:p-8">
 		<div class="card inline-block w-full p-0 md:p-8">
 			<div class="card-header">
-				<h1 class="h1"><iconify-icon icon="material-symbols:map"></iconify-icon> {title}</h1>
-				<h2 class="h2">{data.map_config.naslov2}</h2>
+				<h1 class="h1"><iconify-icon icon="material-symbols:map"></iconify-icon> {naslov}</h1>
 			</div>
 
-			<div class="flex flex-row gap-8 flex-wrap px-4">
+			<div class="flex flex-row gap-8 flex-wrap px-4 mt-4">
 				<div>
 					<a
 						class="btn variant-filled-primary"
 						href="{data.map_config.id}/map.pdf"
-						download="{naslov}.pdf"
+						download="{target_filename}.pdf"
 						>Prenesi<iconify-icon icon="material-symbols:download-2"></iconify-icon></a
 					>
 				</div>
@@ -72,7 +87,7 @@
 						<a
 							class="btn variant-filled-primary"
 							href="{data.map_config.id}/cp_report.pdf"
-							download="{naslov}_KT.pdf"
+							download="{target_filename}_KT.pdf"
 							>Prenesi kontrolne točke<iconify-icon icon="material-symbols:download-2"
 							></iconify-icon></a
 						>
@@ -97,9 +112,11 @@
 						width="100%"
 						height="600"
 						type="application/pdf"
-						title={naslov}
+						title="{target_filename}.pdf"
 						data="{data.map_config.id}/map.pdf"
-					></object>
+					>
+						<a href="{data.map_config.id}/map.pdf">Prenesi PDF</a>
+					</object>
 				</div>
 			</div>
 		</div>

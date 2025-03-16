@@ -686,7 +686,7 @@ def draw_control_points(map_img, map_to_world_tr, control_point_settings: dto.Co
     def draw_name(x, y, anchor, name, color):
         # Create a blurred shadow of the text
         text_size = cp_font.getbbox(name, anchor='lt')
-        blur_radius = 10
+        blur_radius = 30
         img_blur = Image.new('L', (text_size[2] + blur_radius * 2, text_size[3] + blur_radius * 2))
         draw_blur = ImageDraw.Draw(img_blur)
         draw_blur.text((blur_radius, blur_radius), name, fill='white', font=cp_font, anchor='lt')
@@ -1075,6 +1075,7 @@ def create_map(r: dto.MapCreateRequest):
     output_file = os.path.join(get_cache_dir(f'maps/{r.id}'), 'map.pdf')
     output_conf = os.path.join(get_cache_dir(f'maps/{r.id}'), 'conf.json')
     output_cp_report = os.path.join(get_cache_dir(f'maps/{r.id}'), 'cp_report.pdf')
+    output_thumbnail = os.path.join(get_cache_dir(f'maps/{r.id}'), 'thumbnail.webp')
 
     logger.info(f'Creating map: {r.id} - {r.naslov1} {r.naslov2}')
 
@@ -1103,6 +1104,10 @@ def create_map(r: dto.MapCreateRequest):
     draw_markings(map_img, markings_bbox, r.naslov1, r.naslov2, r.dodatno, r.slikal, r.slikad, r.epsg, r.edge_wgs84, r.target_scale, r.raster_type, real_to_map_tr)
 
     logger.info(f'Saving map to: {output_file}')
+    thumbnail = map_img.copy()
+    thumbnail.thumbnail((1024, 1024))
+    thumbnail.save(output_thumbnail)
+    
     # Save the map using img2pdf (PIL uses JPEG compression for PDFs)
     with tempfile.TemporaryFile() as tf:
         map_img.save(tf, format='png', dpi=(TARGET_DPI, TARGET_DPI), optimize=True)
@@ -1110,8 +1115,10 @@ def create_map(r: dto.MapCreateRequest):
         with open(output_file, 'wb') as f:
             f.write(img2pdf.convert(
                 tf,
+                title=r.naslov1,
+                subject=r.naslov2,
                 author=PDF_AUTHOR,
-                creator=PDF_AUTHOR
+                producer=f'Topograf {r.id}'
             ))
     
     # Save the configuration (remove full paths)
