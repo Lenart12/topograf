@@ -4,8 +4,8 @@ import { MapPreviewRequest } from '$lib/api/validation';
 import { runCreateMapPy } from '$lib/api/execute.js';
 import { dev } from '$app/environment';
 const limiter = new RateLimiter({
-  IP: [200, 'h'],
-  IPUA: [20, 'm'],
+  IP: [40, 'h'],
+  IPUA: [5, 'm'],
 });
 
 export async function POST(event) {
@@ -32,9 +32,12 @@ export async function POST(event) {
     return new Response(png, { headers: { 'Content-Type': 'image/png' } });
   }
 
-  if (await limiter.isLimited(event) && false) {
+  if (await limiter.isLimited(event)) {
     if (dev) console.log('Rate limited');
-    else return new Response("Preveč zahtev", { status: 429 });
+    else {
+      console.log('Rate limited from', event.getClientAddress());
+      return new Response("Preveč zahtev", { status: 429 });
+    }
   }
 
   try {

@@ -6,8 +6,8 @@ import { TEMP_FOLDER } from '$env/static/private';
 import { dev } from '$app/environment';
 
 const limiter = new RateLimiter({
-  IP: [10, 'h'],
-  IPUA: [2, 'm'],
+  IP: [20, 'h'],
+  IPUA: [5, 'm'],
 });
 
 export async function POST(event) {
@@ -33,9 +33,12 @@ export async function POST(event) {
     return new Response(validated.id);
   }
 
-  if (await limiter.isLimited(event) && false) {
+  if (await limiter.isLimited(event)) {
     if (dev) console.log('Rate limited');
-    else return new Response("Preveč zahtev", { status: 429 });
+    else {
+      console.log('Rate limited from', event.getClientAddress());
+      return new Response("Preveč zahtev", { status: 429 });
+    }
   }
 
   try {
