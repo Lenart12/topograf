@@ -239,6 +239,9 @@ def parse_command_line_args(args=None):
     parser.add_argument("--slikal", type=str, help="Left image path", default="")
     parser.add_argument("--slikad", type=str, help="Right image path", default="")
     parser.add_argument("--control_points", type=str, help="Control points as JSON string")
+
+    # Utility arguments
+    parser.add_argument("--emit-progress", action="store_true", help="Emit progress events", default=False)
     
     if args is None:
         args = sys.argv[1:]
