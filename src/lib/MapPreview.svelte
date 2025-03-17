@@ -5,6 +5,7 @@
 	import { type ControlPointOptions, FormatMapPreviewRequest, type RasterType } from './api/dto';
 	import { get_cp_name } from '$lib';
 	import { afterUpdate, tick } from 'svelte';
+	import RequestProgressBar from './RequestProgressBar.svelte';
 
 	export let map_w: number;
 	export let map_s: number;
@@ -40,7 +41,7 @@
 
 	$: preview_correct = _map_w === map_w && _map_s === map_s && _map_e === map_e && _map_n === map_n;
 
-	let preview_promise: Promise<void>;
+	let preview_promise: Promise<void> | undefined;
 	let initial_text: HTMLDivElement;
 	let coordinates_text: HTMLDivElement;
 	let cp_container: HTMLDivElement;
@@ -249,6 +250,7 @@
 
 	$: update_checkpoints('cpchange', control_points);
 
+  let map_preview_progress_id: string
 	async function update_raster(src: string) {
 		console.log('update_raster', src, raster_type, epsg);
 		if (preview_correct && _raster_type === raster_type && _epsg === epsg) {
@@ -266,6 +268,21 @@
 				map_size_w_m,
 				map_size_h_m
 			});
+      const preflight = await fetch('/api/map_preview?preflight=true', {
+        method: 'POST',
+        body: fd
+      });
+      if (!preflight.ok) {
+        throw new Error(await preflight.text());
+      }
+      const pf_response = await preflight;
+      if (!pf_response.ok) {
+        const text = await pf_response.text();
+        throw new Error(text);
+      }
+      const pf_map_id = await pf_response.text();
+      map_preview_progress_id = pf_map_id;
+
 			const res = await fetch('/api/map_preview', {
 				method: 'POST',
 				body: fd
@@ -312,6 +329,7 @@
 		})();
 
 		await preview_promise;
+    preview_promise = undefined
 	}
 
 	$: raster_type !== undefined && epsg !== undefined && preview_correct && update_raster('props');
@@ -387,31 +405,30 @@
 	};
 </script>
 
-<div class="flex justify-center m-2 gap-2">
-	{#if inside_border}
-		<button class="btn variant-filled-primary" on:click={() => update_raster('btn')}>
-			Ustvari predogled
-			{#if !preview_correct}
-				<iconify-icon icon="mdi:alert-circle" />
-			{/if}
-		</button>
-	{:else}
-		<div class="variant-filled-error text-center">
-			<p>Območje ni znotraj meje DTK50.</p>
-		</div>
-	{/if}
-
+<div class="flex justify-center align-center flex-col m-2 gap-2">
 	{#if preview_promise}
 		{#await preview_promise}
-			<div class="flex justify-center">
-				<div class="spinner"></div>
-			</div>
+    <div class="flex justify-center">
+      <RequestProgressBar request_type="map_preview" bind:progress_id={map_preview_progress_id} />
+    </div>
 		{:catch error}
 			<div class="variant-filled-error text-center">
 				<p>Ups, prišlo je do napake.</p>
 				<cite>{error.message}</cite>
 			</div>
 		{/await}
+  {:else}
+    {#if inside_border}
+      {#if !preview_correct}
+        <button class="btn variant-filled-primary w-fit self-center" on:click={() => update_raster('btn')}>
+          Ustvari predogled
+        </button>
+      {/if}
+    {:else}
+      <div class="variant-filled-error text-center">
+        <p>Območje ni znotraj meje DTK50.</p>
+      </div>
+    {/if}
 	{/if}
 </div>
 

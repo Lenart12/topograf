@@ -17,7 +17,7 @@ export class TopoFormData {
     if (isNaN(value)) throw new Error(`Napačna vrednost za ${key}`);
     return value;
   }
-  async get_file(key: string, required?: boolean): Promise<string> {
+  async get_file(key: string, skip_write?: boolean, required?: boolean): Promise<string> {
     if (!this.fd.has(key)) {
       if (required) throw new Error(`Manjka datoteka za ${key}`);
       return '';
@@ -29,10 +29,10 @@ export class TopoFormData {
     const ab = await file.arrayBuffer();
     const hash = MD5(crypto_js.lib.WordArray.create(ab)).toString();
     const dest_dir = `${TEMP_FOLDER}/uploads`;
-    if (!fs.existsSync(dest_dir)) fs.mkdirSync(dest_dir, { recursive: true });
+    if (!skip_write && !fs.existsSync(dest_dir)) fs.mkdirSync(dest_dir, { recursive: true });
     const ext = file.name.split('.').pop();
     const dest = `${dest_dir}/${hash}.${ext}`;
-    await fs.promises.writeFile(dest, new Uint8Array(ab));
+    if (!skip_write) await fs.promises.writeFile(dest, new Uint8Array(ab));
     return dest;
   }
 }

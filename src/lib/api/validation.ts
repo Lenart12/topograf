@@ -4,7 +4,7 @@ import { TopoFormData, get_request_id } from "./validation_util";
 import type { PathLike } from "node:fs";
 import type { RasterType } from "./dto"
 
-type RequestType = 'map_preview' | 'create_map';
+export type RequestType = 'map_preview' | 'create_map';
 
 class MapBaseRequest {
   id: string = '';
@@ -102,12 +102,12 @@ export class MapCreateRequest extends MapBaseRequest {
     }
   }
 
-  public static async validate(fd: FormData) {
+  public static async validate(fd: FormData, skip_write_files = false) {
     let tfd = new TopoFormData(fd)
     const validated = new MapCreateRequest(tfd);
     try {
-      validated.slikal = await tfd.get_file('slikal');
-      validated.slikad = await tfd.get_file('slikad');
+      validated.slikal = await tfd.get_file('slikal', skip_write_files);
+      validated.slikad = await tfd.get_file('slikad', skip_write_files);
     } catch (error) {
       if (validated.slikal) await fs.promises.unlink(validated.slikal);
       if (validated.slikad) await fs.promises.unlink(validated.slikad);

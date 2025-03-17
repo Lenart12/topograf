@@ -13,6 +13,7 @@
 		type ControlPointsConfig,
 		FormatMapCreateRequest
 	} from '$lib/api/dto';
+	import RequestProgressBar from '$lib/RequestProgressBar.svelte';
 
 	export let data: PageData;
 
@@ -43,6 +44,7 @@
 	let slikad: FileList;
 	let raster_type: RasterType = 'dtk50';
 	let control_points: ControlPoint[] = [];
+  let create_map_progress_id: string;
 
 	$: raster_managed_epsg = raster_type === 'dtk25';
 
@@ -74,6 +76,19 @@
 
 		get_map_promise = (async () => {
 			download_link.innerHTML = '';
+      const preflight = fetch('/api/create_map?preflight=true', {
+        method: 'POST',
+        body: fd
+      });
+
+      const pf_response = await preflight;
+      if (!pf_response.ok) {
+        const text = await pf_response.text();
+        throw new Error(text);
+      }
+      const pf_map_id = await pf_response.text();
+      create_map_progress_id = pf_map_id;
+
 			const request = fetch('/api/create_map', {
 				method: 'POST',
 				body: fd
@@ -86,6 +101,9 @@
 			}
 
 			const map_id = await response.text();
+      if (pf_map_id !== map_id) {
+        console.error('Map ID mismatch', pf_map_id, map_id);
+      }
 			window.open(`/maps/${map_id}`, '_blank');
 
 			download_link.innerHTML = `<a class="btn variant-filled-primary" href="/maps/${map_id}" target="_blank">Odpri karto <iconify-icon icon="mdi:map-search"></iconify-icon></a>`;
@@ -830,29 +848,23 @@
 			</div>
 
 			<div class="pt-8">
-				{#if inside_border === false}
-					<div class="variant-filled-error text-center">
-						<p>
-							<iconify-icon icon="material-symbols:error"></iconify-icon>Karta je izven območja
-							DTK50.
-						</p>
-					</div>
-				{:else}
-					<div class="flex justify-center w-100%">
-						<button class="btn variant-filled-primary inline-block" on:click={get_map}
-							>Ustvari karto <iconify-icon icon="mdi:map-plus"></iconify-icon></button
-						>
-					</div>
-				{/if}
-				{#if get_map_promise}
-					{#await get_map_promise}
-						<div class="flex justify-center">
-							<div class="spinner"></div>
-						</div>
+        <div class="flex justify-center w-100%">
+					<div bind:this={download_link}></div>
+				</div>
+        {#if get_map_promise}
+          {#await get_map_promise}
+            <div class="flex justify-center">
+              <RequestProgressBar request_type="create_map" bind:progress_id={create_map_progress_id} />
+            </div>
 					{:then value}
 						<div class="variant-filled-info text-center">
 							<p>{value}</p>
 						</div>
+            <div class="flex justify-center w-100% mt-4">
+              <button class="btn variant-filled-primary inline-block" on:click={get_map}
+                >Ustvari novo karto <iconify-icon icon="mdi:map-plus"></iconify-icon></button
+              >
+            </div>
 					{:catch error}
 						<div class="variant-filled-error text-center">
 							<p>
@@ -863,11 +875,28 @@
 								{error.message}</cite
 							>
 						</div>
+            <div class="flex justify-center w-100% mt-4">
+              <button class="btn variant-filled-primary inline-block" on:click={get_map}
+                >Poizkusi še enkrat <iconify-icon icon="mdi:map-plus"></iconify-icon></button
+              >
+            </div>
 					{/await}
+        {:else}
+          {#if inside_border === false}
+            <div class="variant-filled-error text-center">
+              <p>
+                <iconify-icon icon="material-symbols:error"></iconify-icon>Karta je izven območja
+                DTK50.
+              </p>
+            </div>
+          {:else}
+            <div class="flex justify-center w-100%">
+              <button class="btn variant-filled-primary inline-block" on:click={get_map}
+                >Ustvari karto <iconify-icon icon="mdi:map-plus"></iconify-icon></button
+              >
+            </div>
+          {/if}
 				{/if}
-				<div class="flex justify-center w-100%">
-					<div bind:this={download_link}></div>
-				</div>
 			</div>
 		</div>
 	</div>

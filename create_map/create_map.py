@@ -1,4 +1,3 @@
-import time
 from PIL import Image, ImageDraw, ImageFont, ImageFilter
 import sys
 import math
@@ -21,7 +20,7 @@ import logging
 import contextily
 import dto
 import img2pdf
-from progress import ProgressTracker, NoProgress
+from progress import ProgressTracker, NoProgress, ProgressError
 
 ### STATIC CONFIGURATION ###
 
@@ -169,7 +168,7 @@ def get_raster_map_tiles(tiles_url: str, bounds: tuple[float], pt: ProgressTrack
                 pt.step(1)
                 return mosaic
     except Exception as e:
-        raise ValueError(f'Failed to get raster map tiles: {e}')
+        raise ProgressError(f'Napaka pri pridobivanju podatkov iz strežnika') from e
 
 def get_raster_map(raster_type: dto.RasterType, raster_folder: str, bounds: tuple[float], pt: ProgressTracker = NoProgress):
     """
@@ -211,7 +210,7 @@ def get_raster_map(raster_type: dto.RasterType, raster_folder: str, bounds: tupl
         crs_to = pyproj.CRS.from_epsg(3794)
         max_files = 4
     else:
-        raise ValueError('Invalid raster type.')
+        raise ProgressError('Neveljaven tip osnove za karto')
     
     transformer = pyproj.Transformer.from_crs(crs_from, crs_to)
     west, south = transformer.transform(bounds[0], bounds[1])
@@ -227,10 +226,10 @@ def get_raster_map(raster_type: dto.RasterType, raster_folder: str, bounds: tupl
             selected_files.append(os.path.join(raster_folder, filename))
 
     if len(selected_files) == 0:
-        raise ValueError('No raster files intersect with the given bounds.')
+        raise ProgressError('Izbrano območje ne vsebuje nobenih podatkov')
     
     if len(selected_files) > max_files:
-        raise ValueError('Too many raster files intersect with the given bounds. Please select a smaller area.')
+        raise ProgressError('Izbrano območje je preveliko')
 
     src_files_to_mosaic = []
     for fp in pt.over_range(0.2, 0.8, selected_files):
@@ -349,7 +348,7 @@ def draw_grid(map_img, grid_img, map_to_world_tr, grid_to_world_tr, real_to_map_
         logger.info(f'Drawing coordinate system. - ({cs_to.name})')
 
         if not cs_to.is_projected:
-            raise ValueError('The target coordinate system must be projected.')
+            raise ProgressError('Želeni koordinatni sistem mora biti projeciran.')
 
         # Do not draw grid lines near black pixels in the map
         def should_draw_grid_line(x0, y0, line_dir):
@@ -943,6 +942,7 @@ def get_preview_image(bounds, epsg, raster_type, raster_source, preview_width_m,
         int(preview_width_m * TARGET_DPI / 0.0254),
         int(preview_height_m * TARGET_DPI / 0.0254)
     )
+    pt.msg('Pridobivanje podatkov')
     if raster_source != '':
         grid_raster = get_raster_map(raster_type, raster_source, bounds, pt.sub(0, 0.9))
         grid_img = Image.fromarray(rasterio.plot.reshape_as_image(grid_raster), 'RGB')
@@ -954,6 +954,7 @@ def get_preview_image(bounds, epsg, raster_type, raster_source, preview_width_m,
 
     # Draw coordinate system
     if epsg != 'Brez':
+        pt.msg('Risanje mreže')
         grid_draw = ImageDraw.Draw(grid_img)
         grid_font = ImageFont.truetype('timesbi.ttf', 48)
         grid_to_world_tr = rasterio.transform.AffineTransformer(rasterio.transform.from_bounds(*bounds, *grid_img.size))
@@ -1131,13 +1132,17 @@ def create_map(r: dto.MapCreateRequest, pt: ProgressTracker = NoProgress):
     
     os.makedirs(os.path.dirname(output_file), exist_ok=True)
 
+    pt.msg('Pridobivanje podatkov')
     map_img, grid_img, map_to_world_tr, grid_to_world_tr, real_to_map_tr, map_to_grid = get_grid_and_map((r.map_size_w_m, r.map_size_h_m), (r.map_w, r.map_s, r.map_e, r.map_n), r.raster_type, r.raster_source, pt.sub(0, 0.3))
 
+    pt.msg('Risanje mreže')
     border_bottom = draw_grid(map_img, grid_img, map_to_world_tr, grid_to_world_tr, real_to_map_tr, r.raster_type, r.epsg, r.edge_wgs84, map_to_grid, pt.sub(0.3, 0.5))
 
     if len(r.control_points.cps) > 0:
+        pt.msg('Risanje KT')
         draw_control_points(map_img, map_to_world_tr, r.control_points, pt.sub(0.5, 0.7))
         cp_title = f'Kontrolne točke - {r.naslov1} {r.naslov2}'
+        pt.msg('Izdelava poročila KT')
         create_control_point_report(r.control_points, r.raster_type, r.raster_source, cp_title, output_cp_report, pt.sub(0.7, 0.8))
 
     markings_bbox = (
@@ -1147,18 +1152,22 @@ def create_map(r: dto.MapCreateRequest, pt: ProgressTracker = NoProgress):
         r.map_size_h_m - 0.005
     )
 
+    pt.msg('Risanje oznak')
     draw_markings(map_img, markings_bbox, r.naslov1, r.naslov2, r.dodatno, r.slikal, r.slikad, r.epsg, r.edge_wgs84, r.target_scale, r.raster_type, real_to_map_tr, pt.sub(0.8, 0.9))
 
     logger.info(f'Saving map to: {output_file}')
+    pt.msg('Izdelava predogleda karte')
     thumbnail = map_img.copy()
     thumbnail.thumbnail((1024, 1024))
     thumbnail.save(output_thumbnail)
     
     # Save the map using img2pdf (PIL uses JPEG compression for PDFs)
     with tempfile.TemporaryFile() as tf:
+        pt.msg('Optimizacija karte')
         map_img.save(tf, format='png', dpi=(TARGET_DPI, TARGET_DPI), optimize=True)
         pt.step(0.95)
         tf.seek(0)
+        pt.msg('Shranjevanje karte')
         with open(output_file, 'wb') as f:
             f.write(img2pdf.convert(
                 tf,
@@ -1178,6 +1187,7 @@ def create_map(r: dto.MapCreateRequest, pt: ProgressTracker = NoProgress):
     with open(output_conf, 'w') as f:
         f.write(r.model_dump_json())
     pt.step(1)
+    pt.msg('Končano')
 
 def map_preview(r: dto.MapPreviewRequest, pt: ProgressTracker = NoProgress):
     logger.info(f'Creating map preview. ({r.map_w}, {r.map_s}, {r.map_e}, {r.map_n}, {r.epsg}, {r.raster_source})')
@@ -1192,8 +1202,10 @@ def map_preview(r: dto.MapPreviewRequest, pt: ProgressTracker = NoProgress):
 
     output_file = os.path.join(get_cache_dir('map_previews'), f'{r.id}.png')
 
+    pt.msg('Shranjevanje predogleda')
     grid_img.save(output_file, dpi=(TARGET_DPI, TARGET_DPI))
     pt.step(1)
+    pt.msg('Končano')
 
 
 def main():
@@ -1206,12 +1218,13 @@ def main():
     OUTPUT_DIR = request.output_folder
     print(f'Output dir: {OUTPUT_DIR}')
 
-    start_time = time.time()
-    if cm_args.get('emit_progress', True):
+    if cm_args.get('emit_progress'):
+        logger.info('Progress tracking enabled.')
         def on_progress(progress: float):
-            elapsed = time.time() - start_time
-            print(f'PROGRESS: {progress:02.2f} ({elapsed:.2f}s)')
-        pt = ProgressTracker(0, 100, on_progress)
+            print(f'PROGRESS: {progress:02.2f}', file=sys.stderr)
+        def on_message(message: str):
+            print(f'MESSAGE: {message}', file=sys.stderr)
+        pt = ProgressTracker(0, 100, on_progress, on_message)
     else:
         pt = NoProgress
 
@@ -1222,8 +1235,14 @@ def main():
             map_preview(request, pt)
         else:
             raise ValueError(f'Unknown request type: {request.request_type}')
+    except ProgressError as e:
+        logger.error(e.message)
+        if cm_args.get('emit_progress'):
+            print(f'ERROR: {str(e)}', file=sys.stderr)
+        exit(1)
     except Exception as e:
-        logger.error(f'Error: {e}')
+        if cm_args.get('emit_progress'):
+            print(f'ERROR: Interna napaka', file=sys.stderr)
         raise e
 
 if __name__ == '__main__':
