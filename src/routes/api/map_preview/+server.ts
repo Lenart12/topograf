@@ -45,15 +45,17 @@ export async function POST(event) {
     pt_message('Karta je že narejena');
     const png = await fs.promises.readFile(output_file);
     pt_progress(100);
+    MapPreviewProgress.finishRun(validated.id);
     return new Response(png, { headers: { 'Content-Type': 'image/png' } });
   }
 
   if (await limiter.isLimited(event)) {
-    pt_progress(100);
-    pt_error('Preveč zahtev');
     if (dev) console.log('Rate limited');
     else {
+      pt_progress(100);
+      pt_error('Preveč zahtev');
       console.log('Rate limited from', event.getClientAddress());
+      MapPreviewProgress.finishRun(validated.id);
       return new Response("Preveč zahtev", { status: 429 });
     }
   }

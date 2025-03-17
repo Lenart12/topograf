@@ -45,15 +45,17 @@ export async function POST(event) {
     console.log(`Using cached map`);
     pt_progress(100);
     pt_message('Karta je že narejena');
+    CreateMapProgress.finishRun(validated.id);
     return new Response(validated.id);
   }
 
   if (await limiter.isLimited(event)) {
-    pt_progress(100);
-    pt_error('Preveč zahtev');
     if (dev) console.log('Rate limited');
     else {
       console.log('Rate limited from', event.getClientAddress());
+      pt_progress(100);
+      pt_error('Preveč zahtev');
+      CreateMapProgress.finishRun(validated.id);
       return new Response("Preveč zahtev", { status: 429 });
     }
   }
