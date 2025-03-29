@@ -1,3 +1,5 @@
+import datetime
+import traceback
 from PIL import Image, ImageDraw, ImageFont, ImageFilter
 import sys
 import math
@@ -1207,6 +1209,17 @@ def map_preview(r: dto.MapPreviewRequest, pt: ProgressTracker = NoProgress):
     pt.step(1)
     pt.msg('Končano')
 
+def store_error(request: dto.MapBaseRequest, e: Exception, argv: list[str]):
+    error_file = os.path.join(get_cache_dir('errors'), f'{request.id}.json')
+
+    with open(error_file, 'w') as f:
+        f.write(json.dumps({
+            'timestamp': datetime.datetime.now().isoformat(),
+            'type': type(e).__name__,
+            'error': str(e),
+            'args': argv,
+            'traceback': traceback.format_exc().splitlines(),
+          }, indent=2))
 
 def main():
     logging.basicConfig(level=logging.INFO, stream=sys.stdout)
@@ -1243,7 +1256,8 @@ def main():
     except Exception as e:
         if cm_args.get('emit_progress'):
             print(f'ERROR: Interna napaka', file=sys.stderr)
-        raise e
+        store_error(request, e, sys.argv[1:])
+        exit(1)
 
 if __name__ == '__main__':
     main()
