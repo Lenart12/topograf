@@ -250,7 +250,7 @@
 
 	$: update_checkpoints('cpchange', control_points);
 
-  let map_preview_progress_id: string
+	let map_preview_progress_id: string;
 	async function update_raster(src: string) {
 		console.log('update_raster', src, raster_type, epsg);
 		if (preview_correct && _raster_type === raster_type && _epsg === epsg) {
@@ -268,20 +268,20 @@
 				map_size_w_m,
 				map_size_h_m
 			});
-      const preflight = await fetch('/api/map_preview?preflight=true', {
-        method: 'POST',
-        body: fd
-      });
-      if (!preflight.ok) {
-        throw new Error(await preflight.text());
-      }
-      const pf_response = await preflight;
-      if (!pf_response.ok) {
-        const text = await pf_response.text();
-        throw new Error(text);
-      }
-      const pf_map_id = await pf_response.text();
-      map_preview_progress_id = pf_map_id;
+			const preflight = await fetch('/api/map_preview?preflight=true', {
+				method: 'POST',
+				body: fd
+			});
+			if (!preflight.ok) {
+				throw new Error(await preflight.text());
+			}
+			const pf_response = await preflight;
+			if (!pf_response.ok) {
+				const text = await pf_response.text();
+				throw new Error(text);
+			}
+			const pf_map_id = await pf_response.text();
+			map_preview_progress_id = pf_map_id;
 
 			const res = await fetch('/api/map_preview', {
 				method: 'POST',
@@ -329,7 +329,7 @@
 		})();
 
 		await preview_promise;
-    preview_promise = undefined
+		preview_promise = undefined;
 	}
 
 	$: raster_type !== undefined && epsg !== undefined && preview_correct && update_raster('props');
@@ -408,27 +408,36 @@
 <div class="flex justify-center align-center flex-col m-2 gap-2">
 	{#if preview_promise}
 		{#await preview_promise}
-    <div class="flex justify-center">
-      <RequestProgressBar request_type="map_preview" bind:progress_id={map_preview_progress_id} />
-    </div>
+			<div class="flex justify-center">
+				<RequestProgressBar request_type="map_preview" bind:progress_id={map_preview_progress_id} />
+			</div>
 		{:catch error}
 			<div class="variant-filled-error text-center">
 				<p>Ups, prišlo je do napake.</p>
 				<cite>{error.message}</cite>
 			</div>
+			<div class="flex justify-center w-100% mt-4">
+				<button
+					class="btn variant-filled-primary inline-block"
+					on:click={() => update_raster('btn')}
+				>
+					Poizkusi še enkrat <iconify-icon icon="mdi:map-plus"></iconify-icon></button
+				>
+			</div>
 		{/await}
-  {:else}
-    {#if inside_border}
-      {#if !preview_correct}
-        <button class="btn variant-filled-primary w-fit self-center" on:click={() => update_raster('btn')}>
-          Ustvari predogled
-        </button>
-      {/if}
-    {:else}
-      <div class="variant-filled-error text-center">
-        <p>Območje ni znotraj meje DTK50.</p>
-      </div>
-    {/if}
+	{:else if inside_border}
+		{#if !preview_correct}
+			<button
+				class="btn variant-filled-primary w-fit self-center"
+				on:click={() => update_raster('btn')}
+			>
+				Ustvari predogled
+			</button>
+		{/if}
+	{:else}
+		<div class="variant-filled-error text-center">
+			<p>Območje ni znotraj meje DTK50.</p>
+		</div>
 	{/if}
 </div>
 
