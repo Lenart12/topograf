@@ -748,7 +748,7 @@ def draw_control_points(map_img, map_to_world_tr, control_point_settings: dto.Co
         img_blur = img_blur.filter(ImageFilter.GaussianBlur(blur_radius/2))
         dst_box = cp_font.getbbox(name, anchor=anchor)
         img_shadow = Image.new('L', img_blur.size, 128)
-        cp_img.paste(img_shadow, (x - blur_radius + dst_box[0], y - blur_radius + dst_box[1]), mask=img_blur)
+        cp_img.paste(img_shadow, (int(x - blur_radius + dst_box[0]), int(y - blur_radius + dst_box[1])), mask=img_blur)
 
         # Draw the text
         cp_draw.text((x, y), name, fill=color, align='center', anchor=anchor, font=cp_font)
