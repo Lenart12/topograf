@@ -834,7 +834,10 @@ def draw_markings(map_img, bbox, naslov1, naslov2, dodatno, slikal, slikad, epsg
             int(title_p0[0] - title_w / 2 - logo_l.size[0] - logo_margin),
             int(real_to_map_tr.colrow(0, bbox[1])[1] + (bbox_size[1] - logo_l.size[1]) / 2)
         )
-        map_img.paste(logo_l, logo_p0, logo_l)
+        if logo_l.mode == 'RGBA':
+            map_img.paste(logo_l, logo_p0, logo_l)
+        else:
+            map_img.paste(logo_l, logo_p0)
 
     if slikad:
         logger.info(f'Drawing right logo: {slikad}')
@@ -844,7 +847,10 @@ def draw_markings(map_img, bbox, naslov1, naslov2, dodatno, slikal, slikad, epsg
             int(title_p0[0] + title_w / 2 + logo_margin),
             int(real_to_map_tr.colrow(0, bbox[1])[1] + (bbox_size[1] - logo_d.size[1]) / 2)
         )
-        map_img.paste(logo_d, logo_p0, logo_d)
+        if logo_d.mode == 'RGBA':
+            map_img.paste(logo_d, logo_p0, logo_d)
+        else:
+            map_img.paste(logo_d, logo_p0)
 
     pt.step(0.3)
 
