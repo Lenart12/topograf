@@ -828,7 +828,11 @@ def draw_markings(map_img, bbox, naslov1, naslov2, dodatno, slikal, slikad, epsg
 
     if slikal:
         logger.info(f'Drawing left logo: {slikal}')
-        logo_l = Image.open(slikal)
+        try:
+            logo_l = Image.open(slikal)
+        except Image.UnidentifiedImageError as e:
+            raise ProgressError(f'Leva slika ni v podprtem formatu.') from e
+
         logo_l.thumbnail((bbox_size[1] * logo_scale, bbox_size[1] * logo_scale))
         logo_p0 = (
             int(title_p0[0] - title_w / 2 - logo_l.size[0] - logo_margin),
@@ -841,7 +845,10 @@ def draw_markings(map_img, bbox, naslov1, naslov2, dodatno, slikal, slikad, epsg
 
     if slikad:
         logger.info(f'Drawing right logo: {slikad}')
-        logo_d = Image.open(slikad)
+        try:
+            logo_d = Image.open(slikad)
+        except Image.UnidentifiedImageError as e:
+            raise ProgressError(f'Desna slika ni v podprtem formatu.') from e
         logo_d.thumbnail((bbox_size[1] * logo_scale, bbox_size[1] * logo_scale))
         logo_p0 = (
             int(title_p0[0] + title_w / 2 + logo_margin),
