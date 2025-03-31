@@ -403,8 +403,12 @@ def draw_grid(map_img, grid_img, map_to_world_tr, grid_to_world_tr, real_to_map_
         # Draw grid lines on the map
         def draw_grid_line(x0, y0, x1, y1, line_dir):
             x0, y0, x1, y1 = int(x0), int(y0), int(x1), int(y1)
+            gx0, gy0 = map_to_grid(x0, y0)
+            gx1, gy1 = map_to_grid(x1, y1)
             if line_dir == 'x':
-                assert(abs(x0 - x1) <= 1)
+                assert(abs(gx0 - gx1) <= 1)
+                if max(gx0, gx1) >= grid_img.size[0] or min(gx0, gx1) < 0:
+                    return # skip line if it is outside the grid
                 for y in range(int(y0), int(y1)):
                     if not auto_darken or should_draw_grid_line(x0, y, line_dir):
                         map_draw.line((x0, y, x0 + 1, y), fill='black')
@@ -415,7 +419,9 @@ def draw_grid(map_img, grid_img, map_to_world_tr, grid_to_world_tr, real_to_map_
                         map_draw.line((x0, y, x0 + 1, y), fill=col)
 
             elif line_dir == 'y':
-                assert(abs(y0 - y1) <= 1)
+                assert(abs(gy0 - gy1) <= 1)
+                if max(gy0, gy1) >= grid_img.size[1] or min(gy0, gy1) < 0:
+                    return # skip line if it is outside the grid
                 for x in range(int(x0), int(x1)):
                     if not auto_darken or should_draw_grid_line(x, y0, line_dir):
                         map_draw.line((x, y0, x, y0 + 1), fill='black')
