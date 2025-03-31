@@ -20,6 +20,11 @@ class ProgressTracker:
             self.on_message(message)
             self._last_message = message
         
+    def last_msg(self):
+        """
+        Get the last message
+        """
+        return self._last_message
 
     def step(self, value):
         """

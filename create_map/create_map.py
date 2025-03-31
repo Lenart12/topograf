@@ -1303,7 +1303,7 @@ def main():
         logger.error(e)
         logger.error(traceback.format_exc())
         if cm_args.get('emit_progress'):
-            print(f'ERROR: Interna napaka', file=sys.stderr)
+            print(f'ERROR: Interna napaka ({pt.last_msg()})', file=sys.stderr)
         store_error(request, e, sys.argv)
         exit(1)
 
