@@ -1249,14 +1249,15 @@ def main():
         else:
             raise ValueError(f'Unknown request type: {request.request_type}')
     except ProgressError as e:
-        logger.error(e.message)
+        logger.error(str(e))
         if cm_args.get('emit_progress'):
             print(f'ERROR: {str(e)}', file=sys.stderr)
+        store_error(request, e, sys.argv)
         exit(1)
     except Exception as e:
         if cm_args.get('emit_progress'):
             print(f'ERROR: Interna napaka', file=sys.stderr)
-        store_error(request, e, sys.argv[1:])
+        store_error(request, e, sys.argv)
         exit(1)
 
 if __name__ == '__main__':
