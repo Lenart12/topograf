@@ -137,6 +137,7 @@ def get_raster_map_tiles(tiles_url: str, max_zoom: int, bounds: tuple[float], pt
         # Download the tiles
         pt.step(0.1)
         source = xyzservices.TileProvider(url=tiles_url, attribution="", name="url", max_zoom=max_zoom)
+        contextily.set_cache_dir(get_cache_dir('tiles'))
         mosaic_web, extent_web = contextily.bounds2img(*bounds_3857, source=source, zoom_adjust=1)
         # Warp the tiles to EPSG:3794
         pt.step(0.6)
