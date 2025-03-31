@@ -20,6 +20,7 @@ import hashlib
 import numpy as np
 import logging
 import contextily
+import xyzservices
 import dto
 import img2pdf
 import requests
@@ -99,7 +100,7 @@ def get_raster_map_bounds(raster_folder: str, pt: ProgressTracker = NoProgress):
     logger.info(f'Discovered raster bounds. - ({folder_hash})')
     return bounds
 
-def get_raster_map_tiles(tiles_url: str, bounds: tuple[float], pt: ProgressTracker = NoProgress):
+def get_raster_map_tiles(tiles_url: str, max_zoom: int, bounds: tuple[float], pt: ProgressTracker = NoProgress):
     """
     Gets the raster map from a tile server.
     
@@ -135,7 +136,8 @@ def get_raster_map_tiles(tiles_url: str, bounds: tuple[float], pt: ProgressTrack
     try:
         # Download the tiles
         pt.step(0.1)
-        mosaic_web, extent_web = contextily.bounds2img(*bounds_3857, source=tiles_url, zoom_adjust=1)
+        source = xyzservices.TileProvider(url=tiles_url, attribution="", name="url", max_zoom=max_zoom)
+        mosaic_web, extent_web = contextily.bounds2img(*bounds_3857, source=source, zoom_adjust=1)
         # Warp the tiles to EPSG:3794
         pt.step(0.6)
         mosaic_d96, extent_d96 = contextily.warp_tiles(mosaic_web, extent_web, 'EPSG:3794', rasterio.enums.Resampling.lanczos)
@@ -202,7 +204,12 @@ def get_raster_map(raster_type: dto.RasterType, raster_folder: str, bounds: tupl
         return mosaic
 
     if raster_folder.startswith('https://'):
-        mosaic = get_raster_map_tiles(raster_folder, bounds, pt.sub(0.1, 0.9))
+        max_zoom = {
+            'osm': 19,
+            'otm': 15,
+        }.get(raster_type, 19)
+
+        mosaic = get_raster_map_tiles(raster_folder, max_zoom, bounds, pt.sub(0.1, 0.9))
         np.save(raster_cache_fn, mosaic)
         pt.step(1)
         logger.info(f'Created raster mosaic. - ({bounds_hash} - {mosaic.shape})')
