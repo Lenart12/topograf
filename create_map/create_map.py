@@ -29,6 +29,7 @@ from progress import ProgressTracker, NoProgress, ProgressError
 ### STATIC CONFIGURATION ###
 
 # General settings
+INPUT_CONTEXT = None # Set path to error json file to reproduce the error
 USE_CACHE = True
 TARGET_DPI = 318
 PDF_AUTHOR = 'Topograf - topograf.scuke.si'
@@ -1237,6 +1238,16 @@ def store_error(request: dto.MapBaseRequest, e: Exception, argv: list[str]):
 
 def main():
     logging.basicConfig(level=logging.INFO, stream=sys.stdout)
+
+    if len(sys.argv) == 1 and INPUT_CONTEXT is not None:
+        with open(INPUT_CONTEXT, 'r') as f:
+            error = json.load(f)
+        logger.warning(f'Recovering from error: {error["type"]} - {error["error"]}')
+        argv = error["args"]
+        for f, t in error.get('replace', []):
+            argv = [arg.replace(f, t) for arg in argv]
+        sys.argv = [sys.argv[0]] + argv
+
     logger.info(f'Arguments: {sys.argv[1:]}')
     cm_args = dto.parse_command_line_args()
     request = dto.create_request_from_args(cm_args)
