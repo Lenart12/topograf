@@ -22,6 +22,7 @@ import logging
 import contextily
 import dto
 import img2pdf
+import requests
 from progress import ProgressTracker, NoProgress, ProgressError
 
 ### STATIC CONFIGURATION ###
@@ -169,6 +170,11 @@ def get_raster_map_tiles(tiles_url: str, bounds: tuple[float], pt: ProgressTrack
                 mosaic = rasterio.merge.merge([src], bounds)[0]
                 pt.step(1)
                 return mosaic
+    except requests.HTTPError as e:
+        if '404' in str(e):
+            raise ProgressError(f'Rasterski strežnik ne more pokriti željenega območja') from e
+        
+        raise ProgressError(f'Napaka pri pridobivanju podatkov iz strežnika: {e}') from e
     except Exception as e:
         raise ProgressError(f'Napaka pri pridobivanju podatkov iz strežnika') from e
 
