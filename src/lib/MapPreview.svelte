@@ -181,20 +181,20 @@
 			console.log('check pos', cp);
 			if (!cp.marker_html) {
 				console.log('skip pos', cp.id);
-				return; // Skip if not yet rendered
+				continue; // Skip if not yet rendered
 			}
 
 			if (!cp.marker || (cp.marker.getIcon().options as DivIconOptions).html !== cp.marker_html) {
 				console.log('create cp', src, cp.id, cp.marker_html);
 				set_marker(cp, cp.marker_html);
-				return;
+				continue;
 			}
 
 			if (!map.getContainer().contains(cp.marker_html)) {
 				console.log('append cp', src, cp.id, cp.marker_html);
 				cp_container.appendChild(cp.marker_html);
 				set_marker(cp, cp.marker_html);
-				return;
+				continue;
 			}
 
 			const latlng = cp.marker.getLatLng();
@@ -231,6 +231,7 @@
 				cp.line_to_next.addTo(map);
 			}
 
+			cp.line_to_next.setStyle({ color: cp.options.color_line });
 			const latlngs = cp.line_to_next.getLatLngs() as LatLng[];
 			if (
 				latlngs[0].lat !== line_from[0] ||
