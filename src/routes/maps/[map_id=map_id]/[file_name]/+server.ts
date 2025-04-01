@@ -1,6 +1,8 @@
 import fs from 'node:fs';
 import { Readable } from 'node:stream';
 import { TEMP_FOLDER } from '$env/static/private';
+import { error } from '@sveltejs/kit';
+import notFoundLimiter from '$lib/scan_protection';
 
 export async function GET(event) {
   const { map_id, file_name } = event.params;
@@ -10,7 +12,13 @@ export async function GET(event) {
   const file_path_abs = fs.realpathSync(file_path);
 
   if (!file_path_abs.startsWith(fs.realpathSync(maps_folder))) return new Response('Path traversal detected', { status: 400 });
-  if (!fs.existsSync(file_path_abs)) return new Response('File not found', { status: 404 });
+  if (!fs.existsSync(file_path_abs)) {
+    if (await notFoundLimiter.check(event)) {
+      console.error('Rate limit exceeded [404]:', event.getClientAddress(), event.url.pathname);
+      throw error(429, 'Preveč zahtev');
+    }
+    return new Response('File not found', { status: 404 });
+  }
 
   const file_stream = fs.createReadStream(file_path_abs);
   const content_type = (() => {
