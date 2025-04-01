@@ -18,7 +18,11 @@
 	export let inside_border: boolean;
 	export let preview_correct: boolean;
 	export let control_points: ControlPoint[];
+
+	export let cp_default_kind: string;
 	export let cp_default_color: string;
+	export let cp_default_connect: boolean;
+	export let cp_default_line_color: string;
 
 	export let clear_preview: () => void;
 	export let update_preview: () => Promise<void>;
@@ -89,10 +93,15 @@
 				e: latlng.lng,
 				n: latlng.lat,
 				name: undefined,
-				kind: control_points.length === 0 ? 'triangle' : 'circle',
+				kind:
+					cp_default_kind === 'auto'
+						? control_points.length === 0
+							? 'triangle'
+							: 'circle'
+						: cp_default_kind,
 				color: cp_default_color,
-				color_line: cp_default_color,
-				connect_next: true
+				color_line: cp_default_line_color,
+				connect_next: cp_default_connect
 			}
 		} as ControlPoint;
 

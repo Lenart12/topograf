@@ -14,6 +14,7 @@
 		FormatMapCreateRequest
 	} from '$lib/api/dto';
 	import RequestProgressBar from '$lib/RequestProgressBar.svelte';
+	import { flip } from 'svelte/animate';
 
 	export let data: PageData;
 
@@ -48,8 +49,11 @@
 
 	$: raster_managed_epsg = raster_type === 'dtk25';
 
-	let cp_default_color: string = '#ff0000';
 	let control_points_size: number = 3;
+	let cp_default_kind: string = 'auto';
+	let cp_default_color: string = '#ff0000';
+	let cp_default_connect: boolean = true;
+	let cp_default_line_color: string = '#ff0000';
 
 	let download_link: HTMLElement;
 
@@ -473,9 +477,6 @@
 							<div class="space-y-2">
 								<label for="raster_layer">
 									<h3 class="h3">Rasterski sloj</h3>
-									{#if preview_correct}
-										Menjava rasterskega sloja bo povzročila ponovno stvaritev predogleda karte!
-									{/if}
 								</label>
 								<div class="btn-group variant-soft flex-wrap items-stretch">
 									<input
@@ -617,16 +618,6 @@
 							</h3>
 						</svelte:fragment>
 						<svelte:fragment slot="content">
-							<div class="card p-4 mb-4">
-								<h4>
-									<iconify-icon icon="mdi:alert-circle"></iconify-icon> Opozorilo
-								</h4>
-								<p class="small">
-									Določanje KT je še vedno v izdelavi, zato lahko pride do kašnih napak - prevsem
-									pri spremenjanju vrstnega reda in odstranjanju KT. V primeru težav, osveži stran,
-									oz. odstrani vse KT in jih ponovno dodaj.
-								</p>
-							</div>
 							<MapPreview
 								bind:map_w
 								bind:map_s
@@ -639,7 +630,10 @@
 								bind:inside_border
 								bind:preview_correct
 								bind:control_points
+								bind:cp_default_kind
 								bind:cp_default_color
+								bind:cp_default_connect
+								bind:cp_default_line_color
 								bind:update_preview
 								bind:clear_preview={clear_map_preview}
 								bind:clear_cps
@@ -647,27 +641,130 @@
 								bind:remove_cp
 								bind:swap_cp
 							/>
-							<div class="flex flex-col gap-2 mt-4">
-								<div class="flex flex-row gap-2">
-									<label for="control_points_size">Polmer kontrolnih točk (mm)</label>
-									<input
-										class="w-auto input"
-										id="control_points_size"
-										type="number"
-										step="1"
-										bind:value={control_points_size}
-									/>
-								</div>
+							<div class="flex flex-col gap-2 my-8">
+								<Accordion regionControl="variant-soft" regionPanel="variant-soft">
+									<AccordionItem open>
+										<svelte:fragment slot="summary">
+											<h4 class="h4">
+												Nastavitve KT <iconify-icon icon="mdi:cog-outline"></iconify-icon>
+											</h4>
+										</svelte:fragment>
+										<svelte:fragment slot="content">
+											<div class="flex flex-col gap-2">
+												<div class="flex flex-row gap-2">
+													<label for="control_points_size">Polmer kontrolnih točk (mm)</label>
+													<input
+														class="w-auto input variant-soft"
+														id="control_points_size"
+														type="number"
+														step="1"
+														bind:value={control_points_size}
+													/>
+												</div>
 
-								<div class="flex flex-row gap-2 items-center">
-									<label for="cp_color_default">Barva novih točk:</label>
-									<input
-										class="input !rounded-full !h-6 !w-6"
-										id="cp_color_default"
-										type="color"
-										bind:value={cp_default_color}
-									/>
-								</div>
+												<hr class="!border-t-2" />
+
+												<h5 class="h5">
+													Nastavitve novih KT <iconify-icon icon="mdi:map-marker"></iconify-icon>
+												</h5>
+
+												<div class="flex flex-row gap-2 items-center">
+													<label for="cp_default_kind">Vrsta:</label>
+													<select
+														class="select variant-soft p-1 w-auto input"
+														id="cp_default_kind"
+														bind:value={cp_default_kind}
+													>
+														<option value="auto">Avtomatično</option>
+														<option value="circle">Krog</option>
+														<option value="triangle">Trikotnik</option>
+														<option value="dot">Pika</option>
+														<option value="point">Točka</option>
+														<option value="skip">Preskoči</option>
+													</select>
+													<button
+														class="btn btn-sm variant-soft"
+														on:click={() => {
+															control_points = control_points.map((cp, i) => {
+																// @ts-expect-error converting from string to Kind
+																cp.options.kind =
+																	cp_default_kind == 'auto'
+																		? i == 0
+																			? 'triangle'
+																			: 'circle'
+																		: cp_default_kind;
+																return cp;
+															});
+														}}
+														>Nastavi vsem <iconify-icon icon="mdi:check-all"></iconify-icon>
+													</button>
+												</div>
+
+												<div class="flex flex-row gap-2 items-center">
+													<label for="cp_default_color">Barva:</label>
+													<input
+														class="input !rounded-full !h-6 !w-6"
+														id="cp_default_color"
+														type="color"
+														bind:value={cp_default_color}
+													/>
+													<button
+														class="btn btn-sm variant-soft"
+														on:click={() => {
+															control_points = control_points.map((cp) => {
+																cp.options.color = cp_default_color;
+																return cp;
+															});
+														}}
+														>Nastavi vsem <iconify-icon icon="mdi:check-all"></iconify-icon>
+													</button>
+												</div>
+
+												<div class="flex flex-row gap-2 items-center">
+													<label for="cp_default_connect">Povezava z naslednjim:</label>
+													<SlideToggle
+														name="cp_default_connect"
+														rounded="rounded-none"
+														size="sm"
+														background="variant-soft"
+														active="bg-primary-500"
+														bind:checked={cp_default_connect}
+													/>
+													<button
+														class="btn btn-sm variant-soft"
+														on:click={() => {
+															control_points = control_points.map((cp) => {
+																cp.options.connect_next = cp_default_connect;
+																return cp;
+															});
+														}}
+														>Nastavi vsem <iconify-icon icon="mdi:check-all"></iconify-icon>
+													</button>
+												</div>
+
+												<div class="flex flex-row gap-2 items-center">
+													<label for="cp_default_line_color">Barva povezave:</label>
+													<input
+														class="input !rounded-full !h-6 !w-6"
+														id="cp_default_line_color"
+														type="color"
+														bind:value={cp_default_line_color}
+													/>
+													<button
+														class="btn btn-sm variant-soft"
+														on:click={() => {
+															control_points = control_points.map((cp) => {
+																cp.options.color_line = cp_default_line_color;
+																return cp;
+															});
+														}}
+														>Nastavi vsem <iconify-icon icon="mdi:check-all"></iconify-icon>
+													</button>
+												</div>
+											</div>
+										</svelte:fragment>
+									</AccordionItem>
+								</Accordion>
 
 								{#if control_points.length === 0}
 									<div class="card p-4">
@@ -676,135 +773,146 @@
 										</h4>
 										<p class="lead">Dodaj nove kontrolne točke s klikom na zemljevid.</p>
 									</div>
+								{:else}
+									<hr class="!border-t-2" />
 								{/if}
 
-								<Accordion regionControl="bg-surface-800" regionPanel="bg-surface-700">
+								<Accordion regionControl="variant-soft" regionPanel="variant-soft">
 									{#each control_points as cp, i (cp.id)}
 										{@const cp_count = control_points.length}
 										{@const is_first = i === 0}
 										{@const is_last = i === cp_count - 1}
-										<AccordionItem>
-											<svelte:fragment slot="summary">
-												<div class="flex justify-between flex-wrap">
-													<h4 class="h4 whitespace-nowrap">
-														<span style:color="gray">#{cp.id}</span>
-														{get_cp_name(cp, control_points)}
-														<iconify-icon icon="mdi:map-marker"></iconify-icon>
-													</h4>
-													<div class="inline space-x-2 whitespace-nowrap">
-														{#if !is_first}
+										<div animate:flip={{ delay: 0, duration: 300 }}>
+											<AccordionItem>
+												<svelte:fragment slot="summary">
+													<div class="flex justify-between flex-wrap">
+														<h4 class="h4 whitespace-nowrap">
+															<span style:color="gray">#{cp.id}</span>
+															{get_cp_name(cp, control_points)}
+															<iconify-icon icon="mdi:map-marker"></iconify-icon>
+														</h4>
+														<div class="inline space-x-2 whitespace-nowrap">
+															{#if !is_first}
+																<button
+																	class="btn variant-filled-primary"
+																	on:click|stopPropagation={() => swap_cp(i, i - 1)}
+																>
+																	<iconify-icon icon="mdi:arrow-up"></iconify-icon>
+																</button>
+															{/if}
+															{#if !is_last}
+																<button
+																	class="btn variant-filled-primary"
+																	on:click|stopPropagation={() => swap_cp(i, i + 1)}
+																>
+																	<iconify-icon icon="mdi:arrow-down"></iconify-icon>
+																</button>
+															{/if}
 															<button
-																class="btn variant-filled-primary"
-																on:click={() => swap_cp(i, i - 1)}
+																class="btn variant-filled-error"
+																on:click|stopPropagation={() => {
+																	// FIXME: This does not remove lines between points
+																	// fix it later, atleast now the point is removed
+																	// without the site becoming unresponsive
+																	// remove_cp(i);
+																	control_points = control_points.filter((_, j) => j !== i);
+																}}
 															>
-																<iconify-icon icon="mdi:arrow-up"></iconify-icon>
+																<iconify-icon icon="mdi:map-marker-remove-variant"></iconify-icon>
 															</button>
-														{/if}
-														{#if !is_last}
-															<button
-																class="btn variant-filled-primary"
-																on:click={() => swap_cp(i, i + 1)}
-															>
-																<iconify-icon icon="mdi:arrow-down"></iconify-icon>
-															</button>
-														{/if}
-														<button
-															class="btn variant-filled-error"
-															on:click={() => remove_cp(cp.id)}
-														>
-															<iconify-icon icon="mdi:map-marker-remove-variant"></iconify-icon>
-														</button>
+														</div>
 													</div>
-												</div>
-											</svelte:fragment>
-											<svelte:fragment slot="content">
-												<div class="flex flex-col gap-2">
-													<div class="flex flex-row gap-2">
-														<label for="cp_n_{cp.id}">N:</label>
-														<input
-															class="w-auto input !bg-surface-500"
-															id="cp_n_{cp.id}"
-															type="number"
-															step="any"
-															bind:value={cp.options.n}
-														/>
-													</div>
-													<div class="flex flex-row gap-2">
-														<label for="cp_e_{cp.id}">E:</label>
-														<input
-															class="w-auto input !bg-surface-500"
-															id="cp_e_{cp.id}"
-															type="number"
-															step="any"
-															bind:value={cp.options.e}
-														/>
-													</div>
-
-													<div class="flex flex-row gap-2">
-														<label for="cp_name_{cp.id}">Ime:</label>
-														<input
-															class="flex-1 !bg-surface-500 p-1 w-auto input"
-															id="cp_name_{cp.id}"
-															type="text"
-															placeholder={get_cp_name(cp, control_points)}
-															bind:value={cp.options.name}
-														/>
-													</div>
-
-													<div class="flex flex-row gap-2 items-center">
-														<label for="cp_kind_{cp.id}">Vrsta:</label>
-														<select
-															class="select !bg-surface-500 p-1 w-auto input"
-															id="cp_kind_{cp.id}"
-															bind:value={cp.options.kind}
-														>
-															<option value="circle">Krog</option>
-															<option value="triangle">Trikotnik</option>
-															<option value="dot">Pika</option>
-															<option value="point">Točka</option>
-															<option value="skip">Preskoči</option>
-														</select>
-													</div>
-
-													{#if !['skip', 'point'].includes(cp.options.kind)}
-														<div class="flex flex-row gap-2 items-center">
-															<label for="cp_color_{cp.id}">Barva:</label>
+												</svelte:fragment>
+												<svelte:fragment slot="content">
+													<div class="flex flex-col gap-2">
+														<div class="flex flex-row gap-2">
+															<label for="cp_n_{cp.id}">N:</label>
 															<input
-																class="input !rounded-full !h-6 !w-6"
-																id="cp_color_{cp.id}"
-																type="color"
-																bind:value={cp.options.color}
+																class="w-auto input variant-soft"
+																id="cp_n_{cp.id}"
+																type="number"
+																step="any"
+																bind:value={cp.options.n}
 															/>
 														</div>
-													{/if}
+														<div class="flex flex-row gap-2">
+															<label for="cp_e_{cp.id}">E:</label>
+															<input
+																class="w-auto input variant-soft"
+																id="cp_e_{cp.id}"
+																type="number"
+																step="any"
+																bind:value={cp.options.e}
+															/>
+														</div>
 
-													{#if cp.options.kind !== 'skip'}
+														<div class="flex flex-row gap-2">
+															<label for="cp_name_{cp.id}">Ime:</label>
+															<input
+																class="flex-1 variant-soft p-1 w-auto input"
+																id="cp_name_{cp.id}"
+																type="text"
+																placeholder={get_cp_name(cp, control_points)}
+																bind:value={cp.options.name}
+															/>
+														</div>
+
 														<div class="flex flex-row gap-2 items-center">
-															<label for="cp_connect_next_{cp.id}">Povezava z naslednjim:</label>
-															<SlideToggle
-																name="cp_connect_next_{cp.id}"
-																bind:checked={cp.options.connect_next}
-																rounded="rounded-none"
-																size="sm"
-																active="bg-primary-500"
-															/>
+															<label for="cp_kind_{cp.id}">Vrsta:</label>
+															<select
+																class="select variant-soft p-1 w-auto input"
+																id="cp_kind_{cp.id}"
+																bind:value={cp.options.kind}
+															>
+																<option value="circle">Krog</option>
+																<option value="triangle">Trikotnik</option>
+																<option value="dot">Pika</option>
+																<option value="point">Točka</option>
+																<option value="skip">Preskoči</option>
+															</select>
 														</div>
 
-														{#if cp.options.connect_next}
+														{#if !['skip', 'point'].includes(cp.options.kind)}
 															<div class="flex flex-row gap-2 items-center">
-																<label for="cp_color_line_{cp.id}">Barva povezave:</label>
+																<label for="cp_color_{cp.id}">Barva:</label>
 																<input
 																	class="input !rounded-full !h-6 !w-6"
-																	id="cp_color_line_{cp.id}"
+																	id="cp_color_{cp.id}"
 																	type="color"
-																	bind:value={cp.options.color_line}
+																	bind:value={cp.options.color}
 																/>
 															</div>
 														{/if}
-													{/if}
-												</div>
-											</svelte:fragment>
-										</AccordionItem>
+
+														{#if cp.options.kind !== 'skip'}
+															<div class="flex flex-row gap-2 items-center">
+																<label for="cp_connect_next_{cp.id}">Povezava z naslednjim:</label>
+																<SlideToggle
+																	name="cp_connect_next_{cp.id}"
+																	bind:checked={cp.options.connect_next}
+																	rounded="rounded-none"
+																	size="sm"
+																	background="variant-soft"
+																	active="bg-primary-500"
+																/>
+															</div>
+
+															{#if cp.options.connect_next}
+																<div class="flex flex-row gap-2 items-center">
+																	<label for="cp_color_line_{cp.id}">Barva povezave:</label>
+																	<input
+																		class="input !rounded-full !h-6 !w-6"
+																		id="cp_color_line_{cp.id}"
+																		type="color"
+																		bind:value={cp.options.color_line}
+																	/>
+																</div>
+															{/if}
+														{/if}
+													</div>
+												</svelte:fragment>
+											</AccordionItem>
+										</div>
 									{/each}
 								</Accordion>
 								<div class="flex flex-row gap-2">
