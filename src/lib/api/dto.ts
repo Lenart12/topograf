@@ -23,6 +23,8 @@ export type ControlPointsConfig = {
   cp_size: number;
   // add a drop shadow to the control point name
   cp_name_shadow: boolean
+  // offset of the start of the line between the control points
+  cp_line_start_offset: number;
   // array of control points
   cps: ControlPointOptions[];
   // control point bounds (for restoring from json file)

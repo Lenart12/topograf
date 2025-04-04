@@ -594,6 +594,7 @@ def draw_control_points(map_img, map_to_world_tr, control_point_settings: dto.Co
     cp_lines_width_px = int(m_to_px(0.0004)) # Line width in m
     cp_size_px = cp_lines_width_px + m_to_px(cp_size_real) # Total size of the control point
     cp_dot_size_px = m_to_px(0.0003) # 0.3mm size 
+    cp_line_start_offset = m_to_px(control_point_settings.cp_line_start_offset)
 
     cp_count = len(control_points)
     
@@ -731,10 +732,18 @@ def draw_control_points(map_img, map_to_world_tr, control_point_settings: dto.Co
         theta = math.atan2(to_cp.y - from_cp.y, to_cp.x - from_cp.x)
         theta_rev = theta - math.pi
 
-        from_x = from_cp.x + cp_radius(from_cp, theta) * math.cos(theta)
-        from_y = from_cp.y + cp_radius(from_cp, theta) * math.sin(theta)
-        to_x = to_cp.x - cp_radius(to_cp, theta_rev) * math.cos(theta)
-        to_y = to_cp.y - cp_radius(to_cp, theta_rev) * math.sin(theta)
+        from_radius = cp_radius(from_cp, theta) + cp_line_start_offset
+        to_radius = cp_radius(to_cp, theta_rev) + cp_line_start_offset
+        cp_distance = math.sqrt((from_cp.x - to_cp.x) ** 2 + (from_cp.y - to_cp.y) ** 2)
+        
+        if from_radius + to_radius > cp_distance:
+            # If the distance is too small, do not draw the line
+            return
+
+        from_x = from_cp.x + from_radius * math.cos(theta)
+        from_y = from_cp.y + from_radius * math.sin(theta)
+        to_x = to_cp.x - to_radius * math.cos(theta)
+        to_y = to_cp.y - to_radius * math.sin(theta)
 
         cp_draw.line((from_x, from_y, to_x, to_y), fill=from_cp.color_line, width=cp_lines_width_px)
 

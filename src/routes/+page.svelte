@@ -51,6 +51,7 @@
 
 	let control_points_size: number = 3;
 	let cp_name_shadow: boolean = true;
+	let cp_line_start_offset: number = 0;
 	let cp_default_kind: string = 'auto';
 	let cp_default_color: string = '#ff0000';
 	let cp_default_connect: boolean = true;
@@ -154,6 +155,7 @@
 		const cp_json = {
 			cp_size: control_points_size / 1000,
 			cp_name_shadow,
+			cp_line_start_offset: cp_line_start_offset / 1000,
 			cps: control_points.map((cp) => {
 				const opts = structuredClone(cp.options);
 				opts.name = opts.name === undefined ? '' : opts.name;
@@ -672,9 +674,23 @@
 															bind:checked={cp_name_shadow}
 															rounded="rounded-none"
 															size="sm"
+															background="variant-soft"
 															active="bg-primary-500"
 														/>
 													</div>
+												</div>
+
+												<div class="flex flex-row gap-2">
+													<label for="cp_line_start_offset"
+														>Odmik začetka povezave med KT (mm)</label
+													>
+													<input
+														class="w-auto input variant-soft"
+														id="cp_line_start_offset"
+														type="number"
+														step="1"
+														bind:value={cp_line_start_offset}
+													/>
 												</div>
 
 												<hr class="!border-t-2" />
