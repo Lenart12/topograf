@@ -21,6 +21,8 @@ export type ControlPointOptions = {
 export type ControlPointsConfig = {
   // size of the control point in meters
   cp_size: number;
+  // add a drop shadow to the control point name
+  cp_name_shadow: boolean
   // array of control points
   cps: ControlPointOptions[];
   // control point bounds (for restoring from json file)

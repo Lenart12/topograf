@@ -37,6 +37,7 @@ class ControlPointOptions(BaseModel):
 
 class ControlPointsConfig(BaseModel):
     cp_size: float  # size of the control point in meters
+    cp_name_shadow: bool  # show name shadow
     cps: List[ControlPointOptions]
     bounds: Optional[Tuple[float, float, float, float]] = None
 

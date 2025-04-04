@@ -739,16 +739,17 @@ def draw_control_points(map_img, map_to_world_tr, control_point_settings: dto.Co
         cp_draw.line((from_x, from_y, to_x, to_y), fill=from_cp.color_line, width=cp_lines_width_px)
 
     def draw_name(x, y, anchor, name, color):
-        # Create a blurred shadow of the text
-        text_size = cp_font.getbbox(name, anchor='lt')
-        blur_radius = 30
-        img_blur = Image.new('L', (text_size[2] + blur_radius * 2, text_size[3] + blur_radius * 2))
-        draw_blur = ImageDraw.Draw(img_blur)
-        draw_blur.text((blur_radius, blur_radius), name, fill='white', font=cp_font, anchor='lt')
-        img_blur = img_blur.filter(ImageFilter.GaussianBlur(blur_radius/2))
-        dst_box = cp_font.getbbox(name, anchor=anchor)
-        img_shadow = Image.new('L', img_blur.size, 128)
-        cp_img.paste(img_shadow, (int(x - blur_radius + dst_box[0]), int(y - blur_radius + dst_box[1])), mask=img_blur)
+        if control_point_settings.cp_name_shadow:
+            # Create a blurred shadow of the text
+            text_size = cp_font.getbbox(name, anchor='lt')
+            blur_radius = 30
+            img_blur = Image.new('L', (text_size[2] + blur_radius * 2, text_size[3] + blur_radius * 2))
+            draw_blur = ImageDraw.Draw(img_blur)
+            draw_blur.text((blur_radius, blur_radius), name, fill='white', font=cp_font, anchor='lt')
+            img_blur = img_blur.filter(ImageFilter.GaussianBlur(blur_radius/2))
+            dst_box = cp_font.getbbox(name, anchor=anchor)
+            img_shadow = Image.new('L', img_blur.size, 128)
+            cp_img.paste(img_shadow, (int(x - blur_radius + dst_box[0]), int(y - blur_radius + dst_box[1])), mask=img_blur)
 
         # Draw the text
         cp_draw.text((x, y), name, fill=color, align='center', anchor=anchor, font=cp_font)

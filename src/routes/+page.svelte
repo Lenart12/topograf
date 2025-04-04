@@ -50,6 +50,7 @@
 	$: raster_managed_epsg = raster_type === 'dtk25';
 
 	let control_points_size: number = 3;
+	let cp_name_shadow: boolean = true;
 	let cp_default_kind: string = 'auto';
 	let cp_default_color: string = '#ff0000';
 	let cp_default_connect: boolean = true;
@@ -152,6 +153,7 @@
 	function create_control_points_json(add_bounds: boolean = true): string {
 		const cp_json = {
 			cp_size: control_points_size / 1000,
+			cp_name_shadow,
 			cps: control_points.map((cp) => {
 				const opts = structuredClone(cp.options);
 				opts.name = opts.name === undefined ? '' : opts.name;
@@ -660,6 +662,19 @@
 														step="1"
 														bind:value={control_points_size}
 													/>
+												</div>
+
+												<div class="flex flex-row gap-2">
+													<div class="flex flex-row gap-2 items-center">
+														<label for="cp_name_shadow">Senčenje v ozadju imena KT</label>
+														<SlideToggle
+															name="cp_name_shadow"
+															bind:checked={cp_name_shadow}
+															rounded="rounded-none"
+															size="sm"
+															active="bg-primary-500"
+														/>
+													</div>
 												</div>
 
 												<hr class="!border-t-2" />
