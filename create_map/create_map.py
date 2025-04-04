@@ -587,7 +587,12 @@ def draw_control_points(map_img, map_to_world_tr, control_point_settings: dto.Co
     cp_img = Image.new('RGBA', [int(p * map_supersample) for p in map_img.size], (0, 0, 0, 0))
     cp_draw = ImageDraw.Draw(cp_img)
 
-    cp_font = ImageFont.truetype('times.ttf', 60 * map_supersample)
+    if control_point_settings.cp_font == dto.ControlPointFont.SERIF:
+      cp_font = ImageFont.truetype('times.ttf', 60 * map_supersample)
+    elif control_point_settings.cp_font == dto.ControlPointFont.SANS:
+      cp_font = ImageFont.truetype('arial.ttf', 60 * map_supersample)
+    else:
+      raise ProgressError('Neveljavna pisava kontrolne točke')
 
     m_to_px = lambda m: m * TARGET_DPI / 0.0254 * map_supersample
 

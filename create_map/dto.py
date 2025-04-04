@@ -34,11 +34,15 @@ class ControlPointOptions(BaseModel):
     x: Optional[float] = None  # x position on the map (while drawing)
     y: Optional[float] = None  # y position on the map (while drawing)
 
+class ControlPointFont(str, Enum):
+    SANS = "sans"
+    SERIF = "serif"
 
 class ControlPointsConfig(BaseModel):
     cp_size: float  # size of the control point in meters
     cp_name_shadow: bool  # show name shadow
     cp_line_start_offset: float # offset for the start of the line in meters
+    cp_font: ControlPointFont  # font for the control point name
     cps: List[ControlPointOptions]
     bounds: Optional[Tuple[float, float, float, float]] = None
 

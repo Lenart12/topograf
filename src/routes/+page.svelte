@@ -11,6 +11,7 @@
 		type RasterType,
 		type ControlPointOptions,
 		type ControlPointsConfig,
+		type ControlPointFont,
 		FormatMapCreateRequest
 	} from '$lib/api/dto';
 	import RequestProgressBar from '$lib/RequestProgressBar.svelte';
@@ -52,6 +53,7 @@
 	let control_points_size: number = 3;
 	let cp_name_shadow: boolean = true;
 	let cp_line_start_offset: number = 0;
+	let cp_font: ControlPointFont = 'serif';
 	let cp_default_kind: string = 'auto';
 	let cp_default_color: string = '#ff0000';
 	let cp_default_connect: boolean = true;
@@ -156,6 +158,7 @@
 			cp_size: control_points_size / 1000,
 			cp_name_shadow,
 			cp_line_start_offset: cp_line_start_offset / 1000,
+			cp_font,
 			cps: control_points.map((cp) => {
 				const opts = structuredClone(cp.options);
 				opts.name = opts.name === undefined ? '' : opts.name;
@@ -664,6 +667,18 @@
 														step="1"
 														bind:value={control_points_size}
 													/>
+												</div>
+
+												<div class="flex flex-row gap-2">
+													<label for="cp_font">Pisava imen KT</label>
+													<select
+														class="select variant-soft p-1 w-auto input"
+														id="cp_font"
+														bind:value={cp_font}
+													>
+														<option value="serif">Serif (Times New Roman)</option>
+														<option value="sans">Sans serif (Arial)</option>
+													</select>
 												</div>
 
 												<div class="flex flex-row gap-2">

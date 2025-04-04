@@ -18,6 +18,8 @@ export type ControlPointOptions = {
   connect_next: boolean;
 }
 
+export type ControlPointFont = 'sans' | 'serif'; // font type for the control point name (Times New Roman or Arial)
+
 export type ControlPointsConfig = {
   // size of the control point in meters
   cp_size: number;
@@ -25,6 +27,8 @@ export type ControlPointsConfig = {
   cp_name_shadow: boolean
   // offset of the start of the line between the control points
   cp_line_start_offset: number;
+  // font type for the control point name (Times New Roman or Arial)
+  cp_font: ControlPointFont;
   // array of control points
   cps: ControlPointOptions[];
   // control point bounds (for restoring from json file)
