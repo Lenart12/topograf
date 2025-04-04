@@ -51,7 +51,7 @@
 	$: raster_managed_epsg = raster_type === 'dtk25';
 
 	let control_points_size: number = 3;
-	let cp_name_shadow: boolean = true;
+	let cp_name_shadow: boolean = false;
 	let cp_line_start_offset: number = 0;
 	let cp_font: ControlPointFont = 'serif';
 	let cp_default_kind: string = 'auto';
