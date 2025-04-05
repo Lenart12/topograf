@@ -1,4 +1,4 @@
-import { TEMP_FOLDER, DTK25_FOLDER, DTK50_FOLDER } from "$env/static/private";
+import { TEMP_FOLDER, DTK25_FOLDER, DTK50_FOLDER, DTK10_FOLDER, DTK5_FOLDER } from "$env/static/private";
 import fs from "node:fs";
 import { TopoFormData, get_request_id } from "./validation_util";
 import type { PathLike } from "node:fs";
@@ -38,6 +38,8 @@ class MapBaseRequest {
       switch (this.raster_type) {
         case 'dtk50': return DTK50_FOLDER;
         case 'dtk25': return DTK25_FOLDER;
+        case 'dtk10': return DTK10_FOLDER;
+        case 'dtk5': return DTK5_FOLDER;
         case 'osm': return 'https://a.tile.openstreetmap.org/{z}/{x}/{y}.png';
         case 'otm': return 'https://tile.opentopomap.org/{z}/{x}/{y}.png';
         case '': return '';

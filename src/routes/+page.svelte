@@ -498,6 +498,7 @@
 										class="p-2"
 										class:variant-filled-primary={raster_type == 'dtk50'}>DTK50 (2014-2023)</label
 									>
+
 									<input
 										hidden
 										type="radio"
@@ -510,6 +511,33 @@
 										class="p-2"
 										class:variant-filled-primary={raster_type == 'dtk25'}>DTK25 (1996)</label
 									>
+
+									<input
+										hidden
+										type="radio"
+										id="raster_dtk10"
+										bind:group={raster_type}
+										value="dtk10"
+									/>
+									<label
+										for="raster_dtk10"
+										class="p-2"
+										class:variant-filled-primary={raster_type == 'dtk10'}>DTK10 (1994)</label
+									>
+
+									<input
+										hidden
+										type="radio"
+										id="raster_dtk5"
+										bind:group={raster_type}
+										value="dtk5"
+									/>
+									<label
+										for="raster_dtk5"
+										class="p-2"
+										class:variant-filled-primary={raster_type == 'dtk5'}>DTK5 (1994)</label
+									>
+
 									<input hidden type="radio" id="raster_otm" bind:group={raster_type} value="otm" />
 									<label
 										for="raster_otm"
@@ -531,6 +559,16 @@
 										class:variant-filled-primary={raster_type == ''}>Brez</label
 									>
 								</div>
+
+								{#if raster_type === 'dtk5' || raster_type === 'dtk10'}
+									<div class="card p-4">
+										<p>
+											<iconify-icon icon="material-symbols:warning-outline"></iconify-icon>
+											Ta sloj ne pokriva celotno območje Slovenije. Mogoče izdelava karte na tem območju
+											ne bo mogoča!
+										</p>
+									</div>
+								{/if}
 
 								<h3 class="h3">Koordinatni sistemi</h3>
 								{#if !raster_managed_epsg}

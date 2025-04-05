@@ -77,7 +77,7 @@ def get_raster_map_bounds(raster_folder: str, pt: ProgressTracker = NoProgress):
     """
     pt.step(0)
     folder_hash = get_cache_index({'raster_folder': os.path.abspath(raster_folder)})
-    bounds_cache_fn = os.path.join(get_cache_dir(), f'{folder_hash}-bounds-cache.json')
+    bounds_cache_fn = os.path.join(get_cache_dir('tile_bounds'), f'{folder_hash}-bounds-cache.json')
 
     if os.path.exists(bounds_cache_fn) and USE_CACHE:
         with open(bounds_cache_fn, 'r') as f:
@@ -220,7 +220,9 @@ def get_raster_map(raster_type: dto.RasterType, raster_folder: str, bounds: tupl
     pt.step(0)
     crs_from = pyproj.CRS.from_epsg(3794)
 
-    if raster_type == dto.RasterType.DTK25:
+    if raster_type == dto.RasterType.DTK25 or \
+       raster_type == dto.RasterType.DTK10 or \
+       raster_type == dto.RasterType.DTK5:
         crs_to = pyproj.CRS.from_epsg(3912)
         max_files = 6
     elif raster_type == dto.RasterType.DTK50:
@@ -243,7 +245,7 @@ def get_raster_map(raster_type: dto.RasterType, raster_folder: str, bounds: tupl
             selected_files.append(os.path.join(raster_folder, filename))
 
     if len(selected_files) == 0:
-        raise ProgressError('Izbrano območje ne vsebuje nobenih podatkov')
+        raise ProgressError('Izbrano območje ne vsebuje nobenih podatkov za ta rasterski sloj')
     
     if len(selected_files) > max_files:
         raise ProgressError('Izbrano območje je preveliko')
@@ -945,6 +947,8 @@ def draw_markings(map_img, bbox, naslov1, naslov2, dodatno, slikal, slikad, epsg
     ekvidistanca = {
         'dtk50': '20m',
         'dtk25': '10m',
+        'dtk10': '10m',
+        'dtk5': '5m',
         'otm': '10m',
         'osm': 'Brez',
         '': 'Brez'
@@ -965,6 +969,8 @@ def draw_markings(map_img, bbox, naslov1, naslov2, dodatno, slikal, slikad, epsg
     vir = {
         'dtk50': 'Državna topografska karta 1:50.000',
         'dtk25': 'Državna topografska karta 1:25.000',
+        'dtk10': 'Državna topografska karta 1:10.000',
+        'dtk5': 'Državna topografska karta 1:5.000',
         'otm': 'OpenTopoMap',
         'osm': 'OpenStreetMap',
         '': 'Topograf'
@@ -972,6 +978,8 @@ def draw_markings(map_img, bbox, naslov1, naslov2, dodatno, slikal, slikad, epsg
     vir_attr = {
         'dtk50': 'Geodetska uprava RS, 2023',
         'dtk25': 'Geodetska uprava RS, 1996',
+        'dtk10': 'Geodetska uprava RS, 1994',
+        'dtk5': 'Geodetska uprava RS, 1994',
         'otm': 'OpenTopoMap (CC-BY-SA)',
         'osm': 'OpenStreetMap (CC-BY-SA)',
         '': 'Rod Jezerska ščuka'

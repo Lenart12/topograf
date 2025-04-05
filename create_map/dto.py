@@ -10,6 +10,8 @@ import sys
 class RasterType(str, Enum):
     DTK50 = "dtk50"
     DTK25 = "dtk25"
+    DTK10 = "dtk10"
+    DTK5 = "dtk5"
     OSM = "osm"
     OTM = "otm"
     EMPTY = ""

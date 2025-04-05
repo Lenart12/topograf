@@ -1,5 +1,5 @@
 
-export type RasterType = 'dtk50' | 'dtk25' | 'osm' | 'otm' | '';
+export type RasterType = 'dtk50' | 'dtk25' | 'dtk10' | 'dtk5' | 'osm' | 'otm' | '';
 
 export type ControlPointOptions = {
   // northing in meters (D96/TM)
