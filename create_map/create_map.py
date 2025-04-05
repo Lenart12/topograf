@@ -337,7 +337,7 @@ def get_grid_and_map(map_size_m: tuple[float], map_bounds: tuple[float], raster_
     return map_img, grid_img, add_colrow_to_transformer(map_to_world_tr), add_colrow_to_transformer(grid_to_world_tr), add_colrow_to_transformer(real_to_map_tr), map_to_grid
 
 
-def draw_grid(map_img, grid_img, map_to_world_tr, grid_to_world_tr, real_to_map_tr, raster_type, epsg, edge_wgs84, map_to_grid, pt: ProgressTracker = NoProgress):
+def draw_grid(map_img, grid_img, map_to_world_tr, grid_to_world_tr, real_to_map_tr, raster_type, epsg, edge_wgs84, map_to_grid, skip_grid_lines, pt: ProgressTracker = NoProgress):
     map_draw = ImageDraw.Draw(map_img)
     pt.step(0)
     # Draw grid on the map
@@ -448,7 +448,8 @@ def draw_grid(map_img, grid_img, map_to_world_tr, grid_to_world_tr, real_to_map_
         for x in range(int(grid_edge_ws_grid[0]), int(grid_edge_en_grid[0]), 1000):
             xline_s = map_to_world_tr.colrow(*cs_to_from_tr.transform(x, grid_edge_ws[1]))
             xline_n = map_to_world_tr.colrow(*cs_to_from_tr.transform(x, grid_edge_en[1]))
-            draw_grid_line(xline_n[0], xline_n[1], xline_s[0], xline_s[1] - 1, 'x')
+            if not skip_grid_lines:
+                draw_grid_line(xline_n[0], xline_n[1], xline_s[0], xline_s[1] - 1, 'x')
             cord = f'{int(x):06}'
             if x == grid_edge_ws_grid[0] or x == grid_edge_en_grid[0] - 1000:
                 txt = f'{superscript_map[cord[-6]]}{cord[-5:-3]}'
@@ -461,7 +462,8 @@ def draw_grid(map_img, grid_img, map_to_world_tr, grid_to_world_tr, real_to_map_
         for y in range(int(grid_edge_ws_grid[1]), int(grid_edge_en_grid[1]), 1000):
             yline_w = map_to_world_tr.colrow(*cs_to_from_tr.transform(grid_edge_ws[0], y))
             yline_e = map_to_world_tr.colrow(*cs_to_from_tr.transform(grid_edge_en[0], y))
-            draw_grid_line(yline_w[0], yline_w[1], yline_e[0] - 1, yline_e[1], 'y')
+            if not skip_grid_lines:
+                draw_grid_line(yline_w[0], yline_w[1], yline_e[0] - 1, yline_e[1], 'y')
             cord = f'{int(y):06}'
             if y == grid_edge_ws_grid[1] or y == grid_edge_en_grid[1] - 1000:
                 txt = f'{superscript_map[cord[-6]]}{cord[-5:-3]}'
@@ -1187,7 +1189,8 @@ def create_map(r: dto.MapCreateRequest, pt: ProgressTracker = NoProgress):
     map_img, grid_img, map_to_world_tr, grid_to_world_tr, real_to_map_tr, map_to_grid = get_grid_and_map((r.map_size_w_m, r.map_size_h_m), (r.map_w, r.map_s, r.map_e, r.map_n), r.raster_type, r.raster_source, pt.sub(0, 0.3))
 
     pt.msg('Risanje mreže')
-    border_bottom = draw_grid(map_img, grid_img, map_to_world_tr, grid_to_world_tr, real_to_map_tr, r.raster_type, r.epsg, r.edge_wgs84, map_to_grid, pt.sub(0.3, 0.5))
+    skip_grid_lines = r.raster_type == dto.RasterType.DTK25
+    border_bottom = draw_grid(map_img, grid_img, map_to_world_tr, grid_to_world_tr, real_to_map_tr, r.raster_type, r.epsg, r.edge_wgs84, map_to_grid, skip_grid_lines, pt.sub(0.3, 0.5))
 
     if len(r.control_points.cps) > 0:
         pt.msg('Risanje KT')
