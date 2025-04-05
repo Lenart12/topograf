@@ -255,7 +255,7 @@ def get_raster_map(raster_type: dto.RasterType, raster_folder: str, bounds: tupl
         src = rasterio.open(fp)
         src_files_to_mosaic.append(src)
     
-    mosaic, _ = rasterio.merge.merge(src_files_to_mosaic, bounds=bounds)
+    mosaic, _ = rasterio.merge.merge(src_files_to_mosaic, bounds=bounds, nodata=255)
     pt.step(0.9)
     np.save(raster_cache_fn, mosaic)
     pt.step(1)
