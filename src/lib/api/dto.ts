@@ -42,6 +42,7 @@ export interface CreateMapBaseRequest {
   map_n: number;
   epsg: string;
   raster_type: RasterType;
+  zoom_adjust: number;
   map_size_w_m: number;
   map_size_h_m: number;
 }
@@ -66,6 +67,7 @@ function FormatMapBaseRequest(c: CreateMapBaseRequest) {
   fd.append('map_n', c.map_n.toString());
   fd.append('epsg', c.epsg);
   fd.append('raster_type', c.raster_type);
+  fd.append('zoom_adjust', c.zoom_adjust.toString());
   fd.append('map_size_w_m', c.map_size_w_m.toString());
   fd.append('map_size_h_m', c.map_size_h_m.toString());
   return fd;
@@ -77,7 +79,7 @@ export function FormatMapPreviewRequest(c: CreateMapPreviewRequest) {
 
 export function FormatMapCreateRequest(c: CreateMapCreateRequest) {
   const fd = FormatMapBaseRequest(c);
-  console.log(c)
+  // Removed debug statement to avoid accidental output in production
   fd.append('target_scale', c.target_scale.toString());
   fd.append('edge_wgs84', c.edge_wgs84.toString());
   fd.append('naslov1', c.naslov1);

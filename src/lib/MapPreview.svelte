@@ -13,6 +13,7 @@
 	export let map_n: number;
 	export let epsg: string;
 	export let raster_type: RasterType;
+	export let zoom_adjust: number;
 	export let map_size_w_m: number;
 	export let map_size_h_m: number;
 	export let inside_border: boolean;
@@ -38,6 +39,7 @@
 	let _map_n: number;
 	let _epsg: string;
 	let _raster_type: RasterType;
+	let _zoom_adjust: number;
 	let new_cp_id =
 		control_points && control_points.length > 0
 			? Math.max(...control_points.map((cp) => cp.id)) + 1
@@ -263,7 +265,12 @@
 	let map_preview_progress_id: string;
 	async function update_raster(src: string) {
 		console.log('update_raster', src, raster_type, epsg);
-		if (preview_correct && _raster_type === raster_type && _epsg === epsg) {
+		if (
+			preview_correct &&
+			_raster_type === raster_type &&
+			_zoom_adjust == zoom_adjust &&
+			_epsg === epsg
+		) {
 			console.log('update_raster skip', src);
 			return;
 		}
@@ -275,6 +282,7 @@
 				map_n,
 				epsg,
 				raster_type,
+				zoom_adjust,
 				map_size_w_m,
 				map_size_h_m
 			});
@@ -332,6 +340,7 @@
 			_map_e = map_e;
 			_map_n = map_n;
 			_raster_type = raster_type;
+			_zoom_adjust = zoom_adjust;
 			_epsg = epsg;
 
 			update_checkpoints('update_raster', control_points);
@@ -342,7 +351,11 @@
 		preview_promise = undefined;
 	}
 
-	$: raster_type !== undefined && epsg !== undefined && preview_correct && update_raster('props');
+	$: raster_type !== undefined &&
+		zoom_adjust !== undefined &&
+		epsg !== undefined &&
+		preview_correct &&
+		update_raster('props');
 
 	clear_preview = () => {
 		map.eachLayer(function (layer) {

@@ -64,6 +64,7 @@ class MapBaseRequest(BaseModel):
     epsg: str
     raster_type: RasterType
     raster_source: str = ""
+    zoom_adjust: int
     map_size_w_m: float
     map_size_h_m: float
     output_folder: str = ""
@@ -98,6 +99,12 @@ class MapBaseRequest(BaseModel):
             raise ValueError('Velikost karte je prevelika (višina) (max 1m)')
         return v
 
+    @field_validator('zoom_adjust')
+    def validate_zoom_adjust(cls, v: int) -> int:
+        if v not in [-1, 0, 1]:
+            raise ValueError('Nivo podrobnosti je napačen (-1, 0 ali 1)')
+        return v
+
     @classmethod
     def from_args(cls, args: Dict[str, Any]):
         """Create instance from command line arguments dictionary"""
@@ -117,6 +124,7 @@ class MapBaseRequest(BaseModel):
             epsg=epsg,
             raster_type=raster_type,
             raster_source=args.get("raster_source", ""),
+            zoom_adjust=int(args.get("zoom_adjust")),
             map_size_w_m=float(args["map_size_w_m"]),
             map_size_h_m=float(args["map_size_h_m"]),
             output_folder=args.get("output_folder", "")
@@ -138,6 +146,7 @@ class MapPreviewRequest(MapBaseRequest):
             epsg=base.epsg,
             raster_type=base.raster_type,
             raster_source=base.raster_source,
+            zoom_adjust=base.zoom_adjust,
             map_size_w_m=base.map_size_w_m,
             map_size_h_m=base.map_size_h_m,
             output_folder=base.output_folder
@@ -204,6 +213,7 @@ class MapCreateRequest(MapBaseRequest):
             epsg=base.epsg,
             raster_type=base.raster_type,
             raster_source=base.raster_source,
+            zoom_adjust=base.zoom_adjust,
             map_size_w_m=base.map_size_w_m,
             map_size_h_m=base.map_size_h_m,
             target_scale=int(args["target_scale"]),
@@ -236,6 +246,7 @@ def parse_command_line_args(args=None):
     parser.add_argument("--epsg", type=str, help="EPSG code", required=True)
     parser.add_argument("--raster_type", type=str, help="Raster type", required=True)
     parser.add_argument("--raster_source", type=str, help="Raster source path", default="", required=True)
+    parser.add_argument("--zoom_adjust", type=int, help="Zoom adjustment (-1, 0, 1)", required=True)
     parser.add_argument("--map_size_w_m", type=float, help="Map width in meters", required=True)
     parser.add_argument("--map_size_h_m", type=float, help="Map height in meters", required=True)
     parser.add_argument("--output_folder", type=str, help="Output folder path",required=True)

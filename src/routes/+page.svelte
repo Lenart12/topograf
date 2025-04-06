@@ -45,6 +45,7 @@
 	let slikal: FileList;
 	let slikad: FileList;
 	let raster_type: RasterType = 'dtk50';
+	let zoom_adjust: number = 0;
 	let control_points: ControlPoint[] = [];
 	let create_map_progress_id: string;
 
@@ -79,6 +80,7 @@
 			slikal: slikal ? slikal[0] : undefined,
 			slikad: slikad ? slikad[0] : undefined,
 			raster_type,
+			zoom_adjust,
 			control_points: create_control_points_json(false)
 		});
 
@@ -560,6 +562,58 @@
 									>
 								</div>
 
+								{#if raster_type === 'osm' || raster_type === 'otm'}
+									<label for="zoom_adjust">
+										<h3 class="h3">Nivo podrobnosti</h3>
+									</label>
+									<div class="card p-4">
+										<p>
+											<iconify-icon icon="material-symbols:info-outline"></iconify-icon>
+											Ta nastavitev vpliva na nivo podrobnosti karte. Z večjim nivojem podrobnosti je
+											vidnih več podatkov, vendar postanejo manjši, oz. manj berljivi. Podobno kot približevanje
+											na spletnih zemljevidih.
+										</p>
+									</div>
+									<div class="btn-group variant-soft flex-wrap items-stretch">
+										<input
+											hidden
+											type="radio"
+											id="zoom_adjust_0"
+											bind:group={zoom_adjust}
+											value={0}
+										/>
+										<label
+											for="zoom_adjust_0"
+											class="p-2"
+											class:variant-filled-primary={zoom_adjust == 0}>Navadno</label
+										>
+										<input
+											hidden
+											type="radio"
+											id="zoom_adjust_1"
+											bind:group={zoom_adjust}
+											value={1}
+										/>
+										<label
+											for="zoom_adjust_1"
+											class="p-2"
+											class:variant-filled-primary={zoom_adjust == 1}>Bolj natančno</label
+										>
+										<input
+											hidden
+											type="radio"
+											id="zoom_adjust--1"
+											bind:group={zoom_adjust}
+											value={-1}
+										/>
+										<label
+											for="zoom_adjust--1"
+											class="p-2"
+											class:variant-filled-primary={zoom_adjust == -1}>Manj natančno</label
+										>
+									</div>
+								{/if}
+
 								{#if raster_type === 'dtk5' || raster_type === 'dtk10'}
 									<div class="card p-4">
 										<p>
@@ -670,6 +724,7 @@
 								bind:map_n
 								bind:epsg
 								bind:raster_type
+								bind:zoom_adjust
 								bind:map_size_w_m
 								bind:map_size_h_m
 								bind:inside_border

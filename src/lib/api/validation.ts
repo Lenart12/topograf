@@ -16,6 +16,7 @@ class MapBaseRequest {
   map_n: number;
   epsg: string;
   raster_type: RasterType;
+  zoom_adjust: number;
   raster_source: PathLike;
   map_size_w_m: number;
   map_size_h_m: number;
@@ -34,6 +35,8 @@ class MapBaseRequest {
     this.epsg = fd.get('epsg');
     if (!/^EPSG:\d+$|^Brez$/.test(this.epsg)) throw new Error('Koordinatni sistem je napačen (EPSG:xxxx ali Brez)');
     this.raster_type = fd.get('raster_type') as RasterType;
+    this.zoom_adjust = fd.get_number('zoom_adjust');
+    if (![-1, 0, 1].includes(this.zoom_adjust)) throw new Error('Zoom adjust je napačen (-1, 0 ali 1)');
     this.raster_source = (() => {
       switch (this.raster_type) {
         case 'dtk50': return DTK50_FOLDER;

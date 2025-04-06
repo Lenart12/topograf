@@ -106,7 +106,7 @@ def get_raster_map_bounds(raster_folder: str, pt: ProgressTracker = NoProgress):
     logger.info(f'Discovered raster bounds. - ({folder_hash})')
     return bounds
 
-def get_raster_map_tiles(tiles_url: str, max_zoom: int, bounds: tuple[float], pt: ProgressTracker = NoProgress):
+def get_raster_map_tiles(tiles_url: str, zoom_adjust: int, max_zoom: int, bounds: tuple[float], pt: ProgressTracker = NoProgress):
     """
     Gets the raster map from a tile server.
     
@@ -144,7 +144,8 @@ def get_raster_map_tiles(tiles_url: str, max_zoom: int, bounds: tuple[float], pt
         pt.step(0.1)
         source = xyzservices.TileProvider(url=tiles_url, attribution="", name="url", max_zoom=max_zoom)
         contextily.set_cache_dir(get_cache_dir('tiles'))
-        mosaic_web, extent_web = contextily.bounds2img(*bounds_3857, source=source, zoom_adjust=1)
+        logger.info(f'Using zoom adjustment of {zoom_adjust}')
+        mosaic_web, extent_web = contextily.bounds2img(*bounds_3857, source=source, zoom_adjust=zoom_adjust)
         # Warp the tiles to EPSG:3794
         pt.step(0.6)
         mosaic_d96, extent_d96 = contextily.warp_tiles(mosaic_web, extent_web, 'EPSG:3794', rasterio.enums.Resampling.lanczos)
@@ -187,7 +188,7 @@ def get_raster_map_tiles(tiles_url: str, max_zoom: int, bounds: tuple[float], pt
     except Exception as e:
         raise ProgressError(f'Napaka pri pridobivanju podatkov iz strežnika') from e
 
-def get_raster_map(raster_type: dto.RasterType, raster_folder: str, bounds: tuple[float], pt: ProgressTracker = NoProgress):
+def get_raster_map(raster_type: dto.RasterType, raster_folder: str, zoom_adjust: int, bounds: tuple[float], pt: ProgressTracker = NoProgress):
     """
     Merges all the raster files in the folder that intersect with the given bounds.
 
@@ -200,7 +201,7 @@ def get_raster_map(raster_type: dto.RasterType, raster_folder: str, bounds: tupl
     """
 
     pt.step(0)
-    bounds_hash = get_cache_index({'raster_folder': os.path.abspath(raster_folder), 'bounds': bounds})
+    bounds_hash = get_cache_index({'raster_folder': os.path.abspath(raster_folder), 'bounds': bounds, 'zoom_adjust': zoom_adjust})
     raster_cache_fn = os.path.join(get_cache_dir('raster'), f'{bounds_hash}.npy')
 
     if os.path.exists(raster_cache_fn) and USE_CACHE:
@@ -216,7 +217,7 @@ def get_raster_map(raster_type: dto.RasterType, raster_folder: str, bounds: tupl
             'otm': 15,
         }.get(raster_type, 19)
 
-        mosaic = get_raster_map_tiles(raster_folder, max_zoom, bounds, pt.sub(0.1, 0.9))
+        mosaic = get_raster_map_tiles(raster_folder, zoom_adjust, max_zoom, bounds, pt.sub(0.1, 0.9))
         np.save(raster_cache_fn, mosaic)
         pt.step(1)
         logger.info(f'Created raster mosaic. - ({bounds_hash} - {mosaic.shape})')
@@ -279,7 +280,7 @@ def deg_to_deg_min_sec(deg, precision=0):
       s = int((deg - d - m / 60) * 3600)
     return f'{d}°{m:02}\'{s:02}"'
 
-def get_grid_and_map(map_size_m: tuple[float], map_bounds: tuple[float], raster_type: dto.RasterType, raster_folder: str, pt: ProgressTracker = NoProgress):
+def get_grid_and_map(map_size_m: tuple[float], map_bounds: tuple[float], raster_type: dto.RasterType, raster_folder: str, zoom_adjust: int, pt: ProgressTracker = NoProgress):
     """
     Returns the map image, the grid image, and the transformers for converting between the map and the world.
 
@@ -313,7 +314,7 @@ def get_grid_and_map(map_size_m: tuple[float], map_bounds: tuple[float], raster_
 
     # Get the raster map
     if raster_folder != '':
-        grid_raster = get_raster_map(raster_type, raster_folder, map_bounds, pt.sub(0.1, 0.8))
+        grid_raster = get_raster_map(raster_type, raster_folder, zoom_adjust, map_bounds, pt.sub(0.1, 0.8))
         grid_img = Image.fromarray(rasterio.plot.reshape_as_image(grid_raster), 'RGB').resize(grid_size_px, resample=Image.Resampling.LANCZOS)
         pt.step(0.9)
     else:
@@ -1003,14 +1004,14 @@ def draw_markings(map_img, bbox, naslov1, naslov2, dodatno, slikal, slikad, epsg
 
     pt.step(1)
         
-def get_preview_image(bounds, epsg, raster_type, raster_source, preview_width_m, preview_height_m, pt: ProgressTracker = NoProgress):
+def get_preview_image(bounds, epsg, raster_type, raster_source, zoom_adjust, preview_width_m, preview_height_m, pt: ProgressTracker = NoProgress):
     target_size = (
         int(preview_width_m * TARGET_DPI / 0.0254),
         int(preview_height_m * TARGET_DPI / 0.0254)
     )
     pt.msg('Pridobivanje podatkov')
     if raster_source != '':
-        grid_raster = get_raster_map(raster_type, raster_source, bounds, pt.sub(0, 0.9))
+        grid_raster = get_raster_map(raster_type, raster_source, zoom_adjust, bounds, pt.sub(0, 0.9))
         grid_img = Image.fromarray(rasterio.plot.reshape_as_image(grid_raster), 'RGB')
         grid_img = grid_img.resize(target_size, Image.Resampling.LANCZOS)
     else:
@@ -1302,7 +1303,7 @@ def create_control_point_report(control_point_settings: dto.ControlPointsConfig,
             cp.e + CP_REPORT_PREVIEW_SIZE_RADIUS_M,
             cp.n + CP_REPORT_PREVIEW_SIZE_RADIUS_M
         )
-        cp_preview_raster = get_raster_map(raster_type, raster_folder, cp_preview_bounds)
+        cp_preview_raster = get_raster_map(raster_type, raster_folder, 1, cp_preview_bounds)
         cp_preview_img = Image.fromarray(rasterio.plot.reshape_as_image(cp_preview_raster), 'RGB')
         cp_preview_img = cp_preview_img.resize(cp_preview_size_px)
 
@@ -1595,7 +1596,7 @@ def create_map(r: dto.MapCreateRequest, pt: ProgressTracker = NoProgress):
     os.makedirs(os.path.dirname(output_file), exist_ok=True)
 
     pt.msg('Pridobivanje podatkov')
-    map_img, grid_img, map_to_world_tr, grid_to_world_tr, real_to_map_tr, map_to_grid = get_grid_and_map((r.map_size_w_m, r.map_size_h_m), (r.map_w, r.map_s, r.map_e, r.map_n), r.raster_type, r.raster_source, pt.sub(0, 0.3))
+    map_img, grid_img, map_to_world_tr, grid_to_world_tr, real_to_map_tr, map_to_grid = get_grid_and_map((r.map_size_w_m, r.map_size_h_m), (r.map_w, r.map_s, r.map_e, r.map_n), r.raster_type, r.raster_source, r.zoom_adjust, pt.sub(0, 0.3))
 
     pt.msg('Risanje mreže')
     skip_grid_lines = r.raster_type == dto.RasterType.DTK25
@@ -1661,7 +1662,7 @@ def map_preview(r: dto.MapPreviewRequest, pt: ProgressTracker = NoProgress):
         r.map_size_h_m - GRID_MARGIN_M[0] - GRID_MARGIN_M[2]
     )
 
-    grid_img = get_preview_image(bounds, r.epsg, r.raster_type, r.raster_source, *preview_size_m, pt.sub(0, 0.9))
+    grid_img = get_preview_image(bounds, r.epsg, r.raster_type, r.raster_source, r.zoom_adjust, *preview_size_m, pt.sub(0, 0.9))
 
     output_file = os.path.join(get_cache_dir('map_previews'), f'{r.id}.png')
 
