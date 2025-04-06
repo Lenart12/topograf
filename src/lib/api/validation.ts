@@ -1,4 +1,4 @@
-import { TEMP_FOLDER, DTK25_FOLDER, DTK50_FOLDER, DTK10_FOLDER, DTK5_FOLDER } from "$env/static/private";
+import { TEMP_FOLDER, DTK25_FOLDER, DTK50_FOLDER, DTK10_FOLDER, DTK5_FOLDER, DMV125_FOLDER } from "$env/static/private";
 import fs from "node:fs";
 import { TopoFormData, get_request_id } from "./validation_util";
 import type { PathLike } from "node:fs";
@@ -78,6 +78,7 @@ export class MapCreateRequest extends MapBaseRequest {
   slikal: PathLike;
   slikad: PathLike;
   control_points: string;
+  dmv125_folder: PathLike;
 
   private constructor(tfd: TopoFormData) {
     super('create_map', tfd);
@@ -102,6 +103,7 @@ export class MapCreateRequest extends MapBaseRequest {
         throw new Error('Kontrolne točke niso v pravilni obliki (JSON)');
       }
     }
+    this.dmv125_folder = DMV125_FOLDER;
   }
 
   public static async validate(fd: FormData, skip_write_files = false) {

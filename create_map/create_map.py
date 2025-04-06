@@ -25,6 +25,11 @@ import dto
 import img2pdf
 import requests
 from progress import ProgressTracker, NoProgress, ProgressError
+import matplotlib.pyplot as plt
+import matplotlib
+matplotlib.use('Agg')  # Use non-interactive backend
+import io
+from matplotlib.ticker import MaxNLocator
 
 ### STATIC CONFIGURATION ###
 
@@ -573,7 +578,7 @@ def cp_name(i, cp: dto.ControlPointOptions, cp_count):
   if i == 0:
       return 'START'
   if i == cp_count - 1 and cp.connect_next == False:
-      return 'END'
+      return 'FINISH'
           
   return f'KT{i}'
 
@@ -1066,7 +1071,151 @@ def get_preview_image(bounds, epsg, raster_type, raster_source, preview_width_m,
     pt.step(1)
     return grid_img
 
-def create_control_point_report(control_point_settings: dto.ControlPointsConfig, raster_type, raster_folder, title, output_file, pt: ProgressTracker = NoProgress):
+class DMV:
+    xyz_e0 = 364629 # Easting of the origin point in the DMV system
+    xyz_n0 = 25485 # Northing of the origin point in the DMV system
+    tile_e = 2250 # Size of the (minor) tile in the DMV system
+    tile_n = 3000 # Size of the (minor) tile in the DMV system
+    tiles_e = 10 # Number of minor tiles a major tile has in the easting direction
+    tiles_n = 5 # Number of minor tiles a major tile has in the northing direction
+    step_size = 12.5 # Resolution of the grid
+    tile_max_e = int(tile_e / step_size) # Number of steps in the major tile
+    tile_max_n = int(tile_n / step_size) # Number of steps in the minor tile
+
+    # Caching
+    loaded_bounds = None # Loaded bounds for the DMV tiles [folder, bounds]
+    loaded_file = None # Loaded DMV125 file [bounds, readlines]
+
+def dmv_tile_bounds(filename):
+    with open(filename, 'r') as f:
+        lines = f.readlines()
+        first_line = lines[0].strip()
+        last_line = lines[-1].strip()
+        parts = first_line.split(' ')
+        e_min = float(parts[0])
+        n_min = float(parts[1])
+        parts = last_line.split(' ')
+        e_max = float(parts[0])
+        n_max = float(parts[1])
+        return e_min, n_min, e_max, n_max
+
+def dmv_get_bounds(dmv125_folder):
+    if DMV.loaded_bounds is not None:
+        if DMV.loaded_bounds[0] == dmv125_folder:
+            return DMV.loaded_bounds[1]
+
+    cache_index = get_cache_index({'dmv125_folder': dmv125_folder})
+    cache_file = os.path.join(get_cache_dir('tile_bounds'), f'{cache_index}-bounds-cache.json')
+    if os.path.exists(cache_file) and USE_CACHE:
+        with open(cache_file, 'r') as f:
+            return json.load(f)
+
+    logger.info('Calculating DMV tile bounds.')
+    bounds = {}
+    xyz_tiles = [fn for fn in os.listdir(dmv125_folder) if fn.endswith('.XYZ')]
+    for fn in xyz_tiles:
+        bounds[fn] = dmv_tile_bounds(os.path.join(dmv125_folder, fn))
+
+    # Save the bounds to the cache
+    if USE_CACHE:
+        with open(cache_file, 'w') as f:
+            json.dump(bounds, f)
+
+    DMV.loaded_bounds = (dmv125_folder, bounds)
+
+    logger.info('DMV tile bounds calculated.')
+    return bounds
+
+def dmv_coord_to_tile(e, n):
+    """
+    Convert easting and northing coordinates to DMV tile coordinates.
+    This can be wrong on the edges of the tiles (+-5m).
+    """
+    e -= DMV.xyz_e0
+    n -= DMV.xyz_n0
+    global_e = int(e / DMV.tile_e)
+    global_n = int(n / DMV.tile_n)
+    major_e, minor_e = divmod(global_e, DMV.tiles_e)
+    major_n, minor_n = divmod(global_n, DMV.tiles_n)
+    major_e = chr(ord("A") + major_e)
+    major_n = major_n + 19
+    tile_i = (DMV.tiles_n -1 - minor_n) * DMV.tiles_e + minor_e + 1
+    return major_e, major_n, tile_i
+
+def dmv_tile_to_fn(major_e, major_n, tile_i):
+    return f'VT{major_e}{major_n:02d}{tile_i:02d}.XYZ'
+
+def dmv_is_inside_tile(e, n, tile_bounds):
+    """
+    Check if the easting and northing coordinates are inside the tile bounds.
+    """
+    return tile_bounds[0] <= e <= tile_bounds[2] and tile_bounds[1] <= n <= tile_bounds[3]
+
+
+def dmv_coord_to_tile_checked(e, n, dmv125_folder):
+    """
+    Convert easting and northing coordinates to DMV tile coordinates.
+    This checks if the tile exists in the dmv125 folder and makes sure .
+    """
+    major_e, major_n, tile_i = dmv_coord_to_tile(e, n)
+    bounds = dmv_get_bounds(dmv125_folder)
+    tile_fn = dmv_tile_to_fn(major_e, major_n, tile_i)
+    if tile_fn in bounds:
+        tile_bounds = bounds[tile_fn]
+        if dmv_is_inside_tile(e, n, tile_bounds):
+            return tile_fn, tile_bounds
+
+    # Tile does not exist or we have experienced an edge case (see dmv_coord_to_tile)
+    # We need to check all tiles in the folder to find the one that contains the point
+    for fn, tile_bounds in bounds.items():
+        if dmv_is_inside_tile(e, n, tile_bounds):
+            major_e = fn[2]
+            major_n = int(fn[3:5])
+            tile_i = int(fn[5:7])
+            return fn, tile_bounds
+        
+    return None, None
+
+def dmv_get_height(tile_lines, bounds, e, n):
+    """
+    Get the height from the DMV125 file.
+    """
+    min_e, min_n = bounds[0], bounds[1]
+    e -= min_e
+    n -= min_n
+    e_idx = round(e / DMV.step_size)
+    n_idx = round(n / DMV.step_size)
+    e_idx = int(max(min(e_idx, DMV.tile_max_e), 0))
+    n_idx = int(max(min(n_idx, DMV.tile_max_n), 0))
+    line_idx = n_idx * (DMV.tile_max_e + 1) + e_idx
+    line = tile_lines[line_idx].strip()
+    parts = line.split(' ')
+    e_actual = float(parts[0])
+    n_actual = float(parts[1])
+    h = float(parts[-1])
+    if abs(e + min_e - e_actual) > 7 or abs(n + min_n - n_actual) > 7:
+        raise ValueError(f"Coordinates {e}, {n} are not inside the tile bounds {bounds}.")
+    return h
+    
+def get_world_height(dmv125_folder, e, n):
+    """
+    Get the world height from the DMV125 file.
+    """
+    if DMV.loaded_file is not None:
+        if dmv_is_inside_tile(e, n, DMV.loaded_file[0]):
+            return dmv_get_height(DMV.loaded_file[1], DMV.loaded_file[0], e, n)
+        
+    tile_fn, tile_bounds = dmv_coord_to_tile_checked(e, n, dmv125_folder)
+    if tile_fn is None:
+        return 0
+    
+    with open(os.path.join(dmv125_folder, tile_fn), 'r') as f:
+        lines = f.readlines()
+        DMV.loaded_file = (tile_bounds, lines)
+
+        return dmv_get_height(lines, tile_bounds, e, n)
+
+def create_control_point_report(control_point_settings: dto.ControlPointsConfig, raster_type, raster_folder, title, dmv125_folder, output_file, pt: ProgressTracker = NoProgress):
     cps = control_point_settings.cps
     cp_count = len(cps)
     pt.step(0)
@@ -1172,10 +1321,262 @@ def create_control_point_report(control_point_settings: dto.ControlPointsConfig,
 
     title_pos = cp_index_to_pos(1)
     title_pos = (title_pos[0], title_pos[1] - 10)
-    draws[0].text(title_pos, title, fill='black', font=cp_font, anchor='mb')
+    draws[0].text(title_pos, f'Kontrolne točke - {title}', fill='black', font=cp_font, anchor='mb')
+
+    # Create timeline page if we have multiple points
+    if cp_count > 1:
+        pt.msg('Ustvarjanje časovnice')
+        timeline_page = create_timeline_page(cps, title, dmv125_folder, cp_report_page_size_px)
+        pages.insert(0, timeline_page)
 
     pages[0].save(output_file, save_all=True, append_images=pages[1:], dpi=(TARGET_DPI, TARGET_DPI), author=PDF_AUTHOR)
     pt.step(1)
+
+def calculate_distance(cp1, cp2):
+    """Calculate the direct distance between two control points in meters."""
+    return math.sqrt((cp2.e - cp1.e) ** 2 + (cp2.n - cp1.n) ** 2)
+
+def create_timeline_page(cps, title, dmv125_folder, page_size_px):
+    logger.info('Creating timeline report page')
+    timeline_page = Image.new('RGB', page_size_px, 'white')
+    draw = ImageDraw.Draw(timeline_page)
+    
+    # Fonts for the timeline page
+    title_font = ImageFont.truetype('times.ttf', 80)
+    header_font = ImageFont.truetype('timesbd.ttf', 60)
+    text_font = ImageFont.truetype('times.ttf', 50)
+    small_font = ImageFont.truetype('times.ttf', 40)
+    
+    # Draw title
+    title_text = f"Časovnica poti - {title}"
+    draw.text((page_size_px[0]/2, 100), title_text, fill='black', font=title_font, anchor='mt')
+    
+    # Calculate distances and heights
+    cp_count = len(cps)
+    distances = []
+    heights = []
+    height_gains = [0 for _ in range(cp_count)]
+    height_losses = [0 for _ in range(cp_count)]
+
+    # Distances
+    for i, cp in enumerate(cps):
+        heights.append(get_world_height(dmv125_folder, cp.e, cp.n))
+        if i == cp_count - 1 and not cp.connect_next:
+            distances.append(0)
+        else:
+            distances.append(calculate_distance(cp, cps[(i + 1) % cp_count]))
+
+    total_distance = sum(distances)
+
+    height_samples = 1000
+    height_sample_step = max(total_distance / height_samples, 20) # Minimum step size of 20m
+
+    profile_height = []
+    profile_distance = []
+    curr_dist = 0
+    last_height = heights[0]
+    stat_idx = 0
+
+    # Height profile
+    for i, cp in enumerate(cps):
+        if i == cp_count - 1 and not cps[i].connect_next:
+            break
+
+        next_cp = cps[(i + 1) % cp_count]
+        dist = distances[i]
+        current_leg_dist = 0
+        for _ in range(int(dist / height_sample_step) + 1):
+            ratio = current_leg_dist / dist
+            sample_e = cp.e + ratio * (next_cp.e - cp.e)
+            sample_n = cp.n + ratio * (next_cp.n - cp.n)
+
+            sample_height = get_world_height(dmv125_folder, sample_e, sample_n)
+            profile_height.append(sample_height)
+            profile_distance.append(curr_dist + current_leg_dist)
+
+            # Calculate height gain/loss
+            height_diff = sample_height - last_height
+            if height_diff > 0:
+                height_gains[stat_idx] += height_diff
+            else:
+                height_losses[stat_idx] += -height_diff
+            last_height = sample_height
+            stat_idx = i # Index must always lag for one step
+            current_leg_dist += height_sample_step
+        curr_dist += dist
+
+    # Create the height profile graph
+    plt.figure(figsize=(8, 4), dpi=TARGET_DPI)
+    plt.subplots_adjust(left=0.08, right=0.95, top=0.9, bottom=0.2)
+    
+    # Plot the continuous height profile
+    plt.plot(profile_distance, profile_height, 'b-', linewidth=2)
+    
+    energy = max(profile_height) - min(profile_height)
+    label_height = energy * 0.03
+
+    # Add points for each checkpoint
+    current_dist = 0
+    for i, cp in enumerate(cps):
+        plt.scatter(current_dist, heights[i], c='red', s=50, zorder=5)
+        plt.text(current_dist, heights[i] + label_height, cp_name(i, cp, cp_count), 
+                 fontsize=8, ha='center', va='bottom', rotation=45)
+        current_dist += distances[i]
+    
+    if cps[-1].connect_next:
+        plt.scatter(current_dist, heights[0], c='red', s=50, zorder=5)
+        plt.text(current_dist, heights[0] + label_height, cp_name(0, cps[0], cp_count), 
+                 fontsize=8, ha='center', va='bottom', rotation=45)
+
+    # Set labels and grid
+    plt.xlabel('Razdalja [km]')
+    plt.ylabel('Nadmorska višina [m]')
+    plt.title('Višinski profil poti')
+    plt.grid(True, linestyle='--', alpha=0.7)
+    
+    # Format x-axis as km
+    plt.gca().xaxis.set_major_formatter(plt.FuncFormatter(lambda x, _: f'{x/1000:.1f}'))
+    
+    # Force integer y-axis ticks
+    plt.gca().yaxis.set_major_locator(MaxNLocator(integer=True))
+    
+    # Save the plot to a bytes buffer
+    buf = io.BytesIO()
+    plt.savefig(buf, format='png')
+    buf.seek(0)
+    plt.close()
+    
+    # Create an image from the buffer
+    height_profile = Image.open(buf)
+    
+    # Paste the height profile onto the page
+    timeline_page.paste(height_profile, (int((page_size_px[0] - height_profile.width) / 2), 220))
+    
+    # Create statistics table
+    table_top = 220 + height_profile.height + 50
+    table_left = 100
+    table_right = page_size_px[0] - 100
+    table_row_height = 60
+    
+    # Draw table header
+    headers = ["Točka", "Razdalja", "Vzpon", "Spust", "V. razlika", "Čas hoje"]
+    col_widths = [0.20, 0.15, 0.15, 0.15, 0.15, 0.20]  # Width percentages
+    table_width = table_right - table_left
+    
+    # Draw table headers
+    draw.rectangle((table_left, table_top, table_right, table_top + table_row_height), 
+                   outline='black', width=2, fill='#EEEEEE')
+    
+    x_pos = table_left
+    for i, header in enumerate(headers):
+        col_width = col_widths[i] * table_width
+        draw.text((x_pos + col_width/2, table_top + table_row_height/2), 
+                  header, fill='black', font=header_font, anchor='mm')
+        draw.line((x_pos + col_width, table_top, x_pos + col_width, 
+                   table_top + table_row_height * (len(cps) + 2)), fill='black', width=1)
+        x_pos += col_width
+    
+    if cps[-1].connect_next:
+        cps.append(cps[0]) # Add the first checkpoint again for the last row
+        heights.append(heights[0])
+        cp_count += 1
+        total_height_diff = 0
+    else:
+        total_height_diff = int(heights[-1] - heights[0])
+
+    # Draw data rows
+    for i, cp in enumerate(cps):
+        row_top = table_top + table_row_height * (i + 1)
+        
+        # Draw row background
+        draw.rectangle((table_left, row_top, table_right, row_top + table_row_height), 
+                       outline='black', width=1)
+        
+        # Calculate values for this checkpoint
+        name = cp_name(i, cp, cp_count)
+        
+        segment_distance = distances[i - 1] if i > 0 else 0
+        height_gain = height_gains[i - 1] if i > 0 else 0
+        height_loss = height_losses[i - 1] if i > 0 else 0
+            
+        # Calculate walking time (in minutes)
+        # Formula: 4 km = 60 min; 400 m gain = 60 min; 800 m loss = 60 min
+        time_distance = (segment_distance / 4000) * 60  # minutes for distance
+        time_gain = (height_gain / 400) * 60  # minutes for ascent
+        time_loss = (height_loss / 800) * 60  # minutes for descent
+        walking_time = time_distance + time_gain + time_loss
+        
+        # Format time as hours:minutes
+        hours = int(walking_time // 60)
+        minutes = int(walking_time % 60)
+        time_str = f"{hours} h {minutes:02d} min" if hours > 0 else f"{minutes} min"
+            
+        # Format heights
+        height_diff_str = f"{int(heights[i] - heights[i-1])}" if i > 0 else "0"
+        
+        # Values to display in each column
+        values = [
+            name,
+            f"{int(segment_distance)} m",
+            f"{int(height_gain)} m",
+            f"{int(height_loss)} m",
+            f"{height_diff_str} m",
+            time_str
+        ]
+        
+        # Draw values
+        x_pos = table_left
+        for j, value in enumerate(values):
+            col_width = col_widths[j] * table_width
+            draw.text((x_pos + col_width/2, row_top + table_row_height/2), 
+                      value, fill='black', font=text_font, anchor='mm')
+            x_pos += col_width
+    
+    # Draw total row
+    total_row_top = table_top + table_row_height * (cp_count + 1)
+    draw.rectangle((table_left, total_row_top, table_right, total_row_top + table_row_height), 
+                   outline='black', width=2, fill='#EEEEEE')
+    
+    # Calculate total walking time
+    total_gain = sum(height_gains)
+    total_loss = sum(height_losses)
+    total_time = (total_distance / 4000) * 60 + (total_gain / 400) * 60 + (total_loss / 800) * 60
+    total_hours = int(total_time // 60)
+    total_minutes = int(total_time % 60)
+    total_time_str = f"{total_hours}:{total_minutes:02d} h" if total_hours > 0 else f"{total_minutes} min"
+
+    # Format total distance
+    if total_distance >= 1000:
+        total_distance_str = f"{total_distance/1000:.1f} km"
+    else:
+        total_distance_str = f"{int(total_distance)} m"
+    
+    # Values for the total row
+    total_values = [
+        "SKUPAJ",
+        total_distance_str,
+        f"{int(total_gain)} m",
+        f"{int(total_loss)} m",
+        f"{int(total_height_diff)} m",
+        total_time_str
+    ]
+    
+    # Draw total values
+    x_pos = table_left
+    for j, value in enumerate(total_values):
+        col_width = col_widths[j] * table_width
+        draw.text((x_pos + col_width/2, total_row_top + table_row_height/2), 
+                  value, fill='black', font=header_font, anchor='mm')
+        x_pos += col_width
+    
+    # Add a footer note about the calculation method
+    footer_text = "Časi hoje so izračunani po pravilniku za ROT: 4 km = 1h; 400 m vzpona = 1h; 800 m spusta = 1h" \
+                "\nOpozorilo: Časovnica uporablja višinsko razliko glede na ravno linijo, ne optimalno pot! " \
+                "\nVišinski podatki: © Geodetska uprava RS, Digitalni model višin 12,5m, 2017"
+    draw.text((page_size_px[0]/2, page_size_px[1] - 75), 
+              footer_text, fill='black', font=small_font, anchor='mm', align='center')
+    
+    return timeline_page
 
 def create_map(r: dto.MapCreateRequest, pt: ProgressTracker = NoProgress):
     # Temp folder
@@ -1203,9 +1604,9 @@ def create_map(r: dto.MapCreateRequest, pt: ProgressTracker = NoProgress):
     if len(r.control_points.cps) > 0:
         pt.msg('Risanje KT')
         draw_control_points(map_img, map_to_world_tr, r.control_points, pt.sub(0.5, 0.7))
-        cp_title = f'Kontrolne točke - {r.naslov1} {r.naslov2}'
+        cp_title = f'{r.naslov1} {r.naslov2}'
         pt.msg('Izdelava poročila KT')
-        create_control_point_report(r.control_points, r.raster_type, r.raster_source, cp_title, output_cp_report, pt.sub(0.7, 0.8))
+        create_control_point_report(r.control_points, r.raster_type, r.raster_source, cp_title, r.dmv125_folder, output_cp_report, pt.sub(0.7, 0.8))
 
     markings_bbox = (
         GRID_MARGIN_M[3],

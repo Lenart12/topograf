@@ -153,6 +153,7 @@ class MapCreateRequest(MapBaseRequest):
     slikal: str = ""
     slikad: str = ""
     control_points: ControlPointsConfig
+    dmv125_folder: str
 
     @field_validator('target_scale')
     @classmethod
@@ -213,6 +214,7 @@ class MapCreateRequest(MapBaseRequest):
             slikal=args.get("slikal", ""),
             slikad=args.get("slikad", ""),
             control_points=control_points_config,
+            dmv125_folder=args.get("dmv125_folder"),
             output_folder=base.output_folder
         )
 
@@ -247,6 +249,7 @@ def parse_command_line_args(args=None):
     parser.add_argument("--slikal", type=str, help="Left image path", default="")
     parser.add_argument("--slikad", type=str, help="Right image path", default="")
     parser.add_argument("--control_points", type=str, help="Control points as JSON string")
+    parser.add_argument("--dmv125_folder", type=str, help="DMV125 folder path")
 
     # Utility arguments
     parser.add_argument("--emit-progress", action="store_true", help="Emit progress events", default=False)
