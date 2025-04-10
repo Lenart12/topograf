@@ -45,3 +45,28 @@ Uporabniku prijazen spletni vmesnik vam omogoča:
 ### Tiskanje
 
 Zemljevide lahko natisnete na A4 ali A3 formatu, pri tisku bodite pozorni na nastavitve tiskalnika (npr. prilagoditev velikosti zemljevida). Velikost strani naj bo nastavljena na 100% in brez obrezovanja.
+
+### Inštalacija
+Za lokalno inštalacijo Topografa potrebujete Node.js 20+, npm in python 3.12+. Uporabite naslednje ukaze za namestitev in zagon aplikacije:
+
+```bash
+# Frontend+Backend
+npm install # Install dependencies
+npm run build # Build server
+
+# Create map
+cd create_map # Go to create_map folder
+python -m venv .venv # Create virtual environment
+source .venv/bin/activate # Activate virtual environment
+pip install -r requirements.txt # Install requirements
+
+cp .env.template .env # Copy .env template to .env
+nano .env # Edit .env file with your settings
+
+# Run server
+node build
+```
+
+### Potrebni rasterski sloji
+
+Za pravilno delovanje Topografa potrebujete rasterske sloje, ki jih lahko prensete [tukaj](https://drive.google.com/drive/folders/1am-GfSFqO4bFyvkq0LJMC5hzDUnihQVu?usp=drive_link).
