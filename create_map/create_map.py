@@ -888,6 +888,8 @@ def draw_markings(map_img, bbox, naslov1, naslov2, dodatno, slikal, slikad, epsg
 
     # Draw the scale
     scale_max_size = 0.05 # 5 cm
+    if map_img.size[0] < map_img.size[1]:
+        scale_max_size = 0.03 # 3 cm
     # Find the largest scale that fits the map:
     # 5m, 10m, 20m, 50m, 100m, 200m, 500m, 1km, 2km, 5km, 10km, 20km, 50km, 100km, 200km, 500km, 1000km
     scale_sizes = [5, 10, 20, 50, 100, 200, 500, 1000, 2000, 5000, 10000, 20000, 50000, 100000, 200000, 500000, 1000000][::-1]
@@ -930,23 +932,23 @@ def draw_markings(map_img, bbox, naslov1, naslov2, dodatno, slikal, slikad, epsg
     def get_coord_system_name():
         if epsg == 'Brez':
             if edge_wgs84:
-                return 'WGS84:4326'
+                return 'WGS84'
             return 'Brez'
         extra = ''
         if edge_wgs84:
-            extra = ', WGS84:4326'
+            extra = ', WGS84'
 
         crs = pyproj.CRS.from_epsg(int(epsg.split(':')[1]))
 
         crs_epsg = crs.to_epsg()
         if crs_epsg == 3794:
-            return f'D96/TM:3794{extra}'
+            return f'D96/TM{extra}'
         elif crs_epsg == 3912:
-            return f'D48/GK:3912{extra}'
+            return f'D48/GK{extra}'
         elif crs_epsg == 8687:
-            return f'D96/UTM33N:8687{extra}'
+            return f'D96/UTM33N{extra}'
         elif crs_epsg == 32633:
-            return f'WGS84/UTM33N:32633{extra}'
+            return f'WGS84/UTM33N{extra}'
         else:
             return f'{crs.name}:{crs.to_epsg()}{extra}'
 
