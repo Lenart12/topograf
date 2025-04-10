@@ -1387,6 +1387,8 @@ def create_timeline_page(cps, title, dmv125_folder, page_size_px):
         dist = distances[i]
         current_leg_dist = 0
         for _ in range(int(dist / height_sample_step) + 1):
+            if dist == 0:
+                break
             ratio = current_leg_dist / dist
             sample_e = cp.e + ratio * (next_cp.e - cp.e)
             sample_n = cp.n + ratio * (next_cp.n - cp.n)
