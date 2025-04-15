@@ -174,3 +174,4 @@ export class ProgressTracker {
 
 export const CreateMapProgress = new ProgressTracker()
 export const MapPreviewProgress = new ProgressTracker()
+export const MapReambulationProgress = new ProgressTracker()

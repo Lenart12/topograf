@@ -47,6 +47,7 @@ export interface CreateMapBaseRequest {
   map_size_h_m: number;
 }
 
+export interface CreateMapReambulationRequest extends CreateMapBaseRequest { }
 export interface CreateMapPreviewRequest extends CreateMapBaseRequest { }
 export interface CreateMapCreateRequest extends CreateMapBaseRequest {
   target_scale: number;
@@ -56,6 +57,7 @@ export interface CreateMapCreateRequest extends CreateMapBaseRequest {
   dodatno: string;
   slikal?: File
   slikad?: File
+  reambulation_layers?: FileList
   control_points: string; // ControlPointsConfig as JSON string
 }
 
@@ -73,6 +75,10 @@ function FormatMapBaseRequest(c: CreateMapBaseRequest) {
   return fd;
 }
 
+export function FormatMapReambulationRequest(c: CreateMapReambulationRequest) {
+  return FormatMapBaseRequest(c);
+}
+
 export function FormatMapPreviewRequest(c: CreateMapPreviewRequest) {
   return FormatMapBaseRequest(c);
 }
@@ -87,6 +93,11 @@ export function FormatMapCreateRequest(c: CreateMapCreateRequest) {
   fd.append('dodatno', c.dodatno);
   if (c.slikal) fd.append('slikal', c.slikal);
   if (c.slikad) fd.append('slikad', c.slikad);
+  if (c.reambulation_layers) {
+    for (const file of c.reambulation_layers) {
+      fd.append('reambulation_layers', file);
+    }
+  }
   fd.append('control_points', c.control_points);
   return fd;
 }

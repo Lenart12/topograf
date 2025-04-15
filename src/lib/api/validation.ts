@@ -3,8 +3,10 @@ import fs from "node:fs";
 import { TopoFormData, get_request_id } from "./validation_util";
 import type { PathLike } from "node:fs";
 import type { RasterType } from "./dto"
+import crypto_js from 'crypto-js';
+const { MD5 } = crypto_js;
 
-export type RequestType = 'map_preview' | 'create_map';
+export type RequestType = 'map_preview' | 'create_map' | 'map_reambulation';
 
 class MapBaseRequest {
   id: string = '';
@@ -72,6 +74,18 @@ export class MapPreviewRequest extends MapBaseRequest {
   }
 }
 
+export class MapReambulationRequest extends MapBaseRequest {
+  private constructor(tfd: TopoFormData) {
+    super('map_reambulation', tfd);
+  }
+
+  public static async validate(fd: FormData) {
+    const validated = new MapReambulationRequest(new TopoFormData(fd));
+    validated.id = get_request_id(validated);
+    return validated;
+  }
+}
+
 export class MapCreateRequest extends MapBaseRequest {
   target_scale: number;
   edge_wgs84: boolean;
@@ -80,6 +94,7 @@ export class MapCreateRequest extends MapBaseRequest {
   dodatno: string;
   slikal: PathLike;
   slikad: PathLike;
+  reambulation_layers: string;
   control_points: string;
   dmv125_folder: PathLike;
 
@@ -97,6 +112,7 @@ export class MapCreateRequest extends MapBaseRequest {
     this.edge_wgs84 = tfd.get('edge_wgs84') === 'true';
     this.slikal = ''
     this.slikad = ''
+    this.reambulation_layers = ''
     this.control_points = tfd.get('control_points');
     if (this.control_points.length !== 0) {
       try {
@@ -120,6 +136,30 @@ export class MapCreateRequest extends MapBaseRequest {
       if (validated.slikad) await fs.promises.unlink(validated.slikad);
       throw error;
     }
+
+    const local_layers: string[] = []
+    try {
+      const layers = fd.getAll('reambulation_layers')
+      const dest_dir = `${TEMP_FOLDER}/uploads`;
+      if (!skip_write_files && !fs.existsSync(dest_dir)) fs.mkdirSync(dest_dir, { recursive: true });
+      for (const file of layers) {
+        if (!file || !(file instanceof File)) throw new Error(`Napačna datoteka za reambulacijo`);
+        if (file.size > 20 * 1024 * 1024) throw new Error(`Datoteka za ${file.name} je prevelika (max 20MiB)`);
+        if (file.name.includes('/') || file.name.includes('\\')) throw new Error(`Napačno ime datoteke za reambulacijo`);
+        const ab = await file.arrayBuffer();
+        const hash = MD5(crypto_js.lib.WordArray.create(ab)).toString();
+        const dest = `${dest_dir}/${hash}-${file.name}`;
+        if (!skip_write_files) await fs.promises.writeFile(dest, new Uint8Array(ab));
+        local_layers.push(dest);
+      }
+      validated.reambulation_layers = JSON.stringify(local_layers)
+    } catch (error) {
+      for (const layer of local_layers) {
+        await fs.promises.unlink(layer);
+      }
+      throw error;
+    }
+
     validated.id = get_request_id(validated);
     return validated;
   }

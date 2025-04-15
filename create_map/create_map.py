@@ -27,9 +27,11 @@ import requests
 from progress import ProgressTracker, NoProgress, ProgressError
 import matplotlib.pyplot as plt
 import matplotlib
+import itertools
 matplotlib.use('Agg')  # Use non-interactive backend
 import io
 from matplotlib.ticker import MaxNLocator
+import shutil
 
 ### STATIC CONFIGURATION ###
 
@@ -280,7 +282,95 @@ def deg_to_deg_min_sec(deg, precision=0):
       s = int((deg - d - m / 60) * 3600)
     return f'{d}°{m:02}\'{s:02}"'
 
-def get_grid_and_map(map_size_m: tuple[float], map_bounds: tuple[float], raster_type: dto.RasterType, raster_folder: str, zoom_adjust: int, pt: ProgressTracker = NoProgress):
+def get_transform_for_image(filename: str, world_file: str | None, width: int, height: int) -> rasterio.transform.Affine:
+    layer_name = os.path.basename(filename)[32 + 1:].removesuffix('.png')
+
+    filename = filename.removesuffix('.png')
+    bounds = filename.split('-')[-1]
+    bound_parts = bounds.split('_')
+    if len(bound_parts) == 4:
+        try:
+            west = float(bound_parts[0].strip())
+            south = float(bound_parts[1].strip())
+            east = float(bound_parts[2].strip())
+            north = float(bound_parts[3].strip())
+        except ValueError:
+            raise ProgressError(f'Neveljavne meje sloja "{layer_name}"')
+
+        return rasterio.transform.from_bounds(west, south, east, north, width, height)
+    elif world_file is not None:
+        try:
+            with open(world_file, 'r') as f:
+                paramters = []
+                for _ in range(6):
+                    p = f.readline()
+                    if p == '':
+                        break
+                    paramters.append(float(p.strip()))
+
+                if len(paramters) != 6:
+                    raise ProgressError(f'Neveljavna oblika stranske datoteke za sloj "{layer_name}"')
+                
+                A, D, B, E, C, F = paramters
+                if D != 0 or B != 0:
+                    raise ProgressError(f'Rotacija rasterja ni podprta za sloj "{layer_name}"')
+                return rasterio.transform.Affine(A, B, C, D, E, F)     
+        except ProgressError as e:
+            raise e           
+        except Exception as e:
+            raise ProgressError(f'Napaka pri branju stranske datotek za sloj "{layer_name}"') from e
+    else:
+        raise ProgressError(f'Sloj "{layer_name}" brez podanih mej')
+
+def reambulate_raster(raster: Image.Image, bounds: tuple[float], layer_files: list[str], pt: ProgressTracker = NoProgress):
+    pt.step(0)
+    raster = raster.convert('RGBA')
+
+    # Strip ">MD5[32]-<Filename" from the filename
+    layer_files = [(l, os.path.basename(l)[32 + 1:]) for l in layer_files]
+    layer_files = sorted(layer_files, key=lambda x: x[1])
+
+    layers = [] # List of tuples (png_file, world_file or None)
+
+    # Group the files by base name (without extension) to extract the PNG and world file
+    for base_name, group in itertools.groupby(layer_files, key=lambda x: os.path.splitext(x[1])[0]):
+        group = list(group)
+        png_file = [l for l, n in group if n.endswith('.png')]
+        if len(png_file) == 0:
+            raise ProgressError(f'Sloju {base_name} manjka rasterska datoteka')
+        elif len(png_file) > 1:
+            raise ProgressError(f'Več datotek sloja {base_name}')
+        world_file = [l for l, n in group if n.endswith('.pgw')]
+        if len(world_file) == 0:
+            world_file = [None]
+        elif len(world_file) > 1:
+            raise ProgressError(f'Več stranskih datotek za sloj {base_name}')
+        
+        layers.append((png_file[0], world_file[0]))
+
+
+    base_transform = rasterio.transform.from_bounds(*bounds, *raster.size)
+    logger.info(f'Overlaying {len(layers)} layers. - ({bounds})')
+
+    for png_file, world_file in pt.over_range(0.1, 1, layers):
+        # Load overlay and transform
+        oimg = Image.open(png_file).convert('RGBA')
+        otransform = get_transform_for_image(png_file, world_file, *oimg.size)
+        obounds = rasterio.transform.array_bounds(*oimg.size[::-1], otransform)
+
+        # Calculate overlay bounds in the base image
+        oy_min, ox_min = rasterio.transform.rowcol(base_transform, obounds[0], obounds[3])
+        oy_max, ox_max = rasterio.transform.rowcol(base_transform, obounds[2], obounds[1])
+        owidth = ox_max - ox_min
+        oheight = oy_max - oy_min
+        if oimg.size[0] != owidth or oimg.size[1] != oheight:
+            oimg = oimg.resize((owidth, oheight), resample=Image.Resampling.LANCZOS)
+
+        raster.paste(oimg, (ox_min, oy_min, ox_max, oy_max), oimg)
+
+    return raster.convert('RGB')
+
+def get_grid_and_map(map_size_m: tuple[float], map_bounds: tuple[float], raster_type: dto.RasterType, raster_folder: str, reamulation_layers: list[str], zoom_adjust: int, pt: ProgressTracker = NoProgress):
     """
     Returns the map image, the grid image, and the transformers for converting between the map and the world.
 
@@ -315,7 +405,12 @@ def get_grid_and_map(map_size_m: tuple[float], map_bounds: tuple[float], raster_
     # Get the raster map
     if raster_folder != '':
         grid_raster = get_raster_map(raster_type, raster_folder, zoom_adjust, map_bounds, pt.sub(0.1, 0.8))
-        grid_img = Image.fromarray(rasterio.plot.reshape_as_image(grid_raster), 'RGB').resize(grid_size_px, resample=Image.Resampling.LANCZOS)
+        grid_img = Image.fromarray(rasterio.plot.reshape_as_image(grid_raster), 'RGB')
+        if len(reamulation_layers) > 0:
+            pt.msg('Reambulacija karte')
+            grid_img = reambulate_raster(grid_img, map_bounds, reamulation_layers, pt.sub(0.5, 0.85))
+
+        grid_img = grid_img.resize(grid_size_px, resample=Image.Resampling.LANCZOS)
         pt.step(0.9)
     else:
         logger.info('Skipping raster map.')
@@ -1005,7 +1100,58 @@ def draw_markings(map_img, bbox, naslov1, naslov2, dodatno, slikal, slikad, epsg
         map_source_p0[1] -= map_info_font.getbbox(txt)[3]
 
     pt.step(1)
-        
+
+def draw_preview_grid(grid_img, bounds, epsg, pt: ProgressTracker = NoProgress):
+    pt.step(0)
+    grid_draw = ImageDraw.Draw(grid_img)
+    grid_font = ImageFont.truetype('timesbi.ttf', 48)
+    grid_to_world_tr = rasterio.transform.AffineTransformer(rasterio.transform.from_bounds(*bounds, *grid_img.size))
+    grid_to_world_tr.colrow = lambda x, y: grid_to_world_tr.rowcol(x, y)[::-1]
+    cs_from = pyproj.CRS.from_epsg(3794)
+    cs_to = pyproj.CRS.from_epsg(int(epsg.split(':')[1]))
+    cs_from_to_tr = pyproj.Transformer.from_crs(cs_from, cs_to)
+    cs_to_from_tr = pyproj.Transformer.from_crs(cs_to, cs_from)
+
+    logger.info(f'Drawing coordinate system. - ({cs_to.name})')
+
+    if not cs_to.is_projected:
+        raise ValueError('The target coordinate system must be projected.')
+
+    superscript_map = {
+        "0": "", "1": "¹", "2": "²", "3": "³", "4": "⁴", "5": "⁵", "6": "⁶", "7": "⁷", "8": "⁸", "9": "⁹"}
+
+    grid_edge_ws = grid_to_world_tr.xy(grid_img.size[1], 0)
+    grid_edge_en = grid_to_world_tr.xy(0, grid_img.size[0])
+
+    # Convert to target coordinate system
+    grid_edge_ws = cs_from_to_tr.transform(grid_edge_ws[0], grid_edge_ws[1])
+    grid_edge_en = cs_from_to_tr.transform(grid_edge_en[0], grid_edge_en[1])
+
+    grid_edge_ws_grid = (math.ceil(grid_edge_ws[0] / 1000) * 1000, math.ceil(grid_edge_ws[1] / 1000) * 1000)
+    grid_edge_en_grid = (math.floor(grid_edge_en[0] / 1000 + 1) * 1000, math.floor(grid_edge_en[1] / 1000 + 1) * 1000)
+
+    for x in range(int(grid_edge_ws_grid[0]), int(grid_edge_en_grid[0]), 1000):
+        xline_s = grid_to_world_tr.colrow(*cs_to_from_tr.transform(x, grid_edge_ws[1]))
+        xline_n = grid_to_world_tr.colrow(*cs_to_from_tr.transform(x, grid_edge_en[1]))
+        grid_draw.line([xline_n, xline_s], fill='black')
+        cord = f'{int(x):06}'
+        txt = f'{superscript_map[cord[-6]]}{cord[-5:-3]}'
+        grid_draw.text(xline_s, txt, fill='red', align='center', anchor='lb', font=grid_font)
+        grid_draw.text(xline_n, txt, fill='red', align='center', anchor='lt', font=grid_font)
+
+    pt.step(0.5)
+
+    for y in range(int(grid_edge_ws_grid[1]), int(grid_edge_en_grid[1]), 1000):
+        yline_w = grid_to_world_tr.colrow(*cs_to_from_tr.transform(grid_edge_ws[0], y))
+        yline_e = grid_to_world_tr.colrow(*cs_to_from_tr.transform(grid_edge_en[0], y))
+        cord = f'{int(y):06}'
+        txt = f'{superscript_map[cord[-6]]}{cord[-5:-3]}'
+        grid_draw.text(yline_w, txt, fill='red', align='center', anchor='lb', font=grid_font)
+        grid_draw.text(yline_e, txt, fill='red', align='center', anchor='rb', font=grid_font)
+        grid_draw.line([yline_w, yline_e], fill='black')
+
+    pt.step(1)
+
 def get_preview_image(bounds, epsg, raster_type, raster_source, zoom_adjust, preview_width_m, preview_height_m, pt: ProgressTracker = NoProgress):
     target_size = (
         int(preview_width_m * TARGET_DPI / 0.0254),
@@ -1013,65 +1159,22 @@ def get_preview_image(bounds, epsg, raster_type, raster_source, zoom_adjust, pre
     )
     pt.msg('Pridobivanje podatkov')
     if raster_source != '':
-        grid_raster = get_raster_map(raster_type, raster_source, zoom_adjust, bounds, pt.sub(0, 0.9))
+        grid_raster = get_raster_map(raster_type, raster_source, zoom_adjust, bounds, pt.sub(0, 0.7))
         grid_img = Image.fromarray(rasterio.plot.reshape_as_image(grid_raster), 'RGB')
         grid_img = grid_img.resize(target_size, Image.Resampling.LANCZOS)
     else:
         grid_img = Image.new('RGB', target_size, 0xFFFFFF)
         logger.info(f'Created blank raster map. ({target_size})')
-        pt.step(0.9)
+        pt.step(0.7)
 
     # Draw coordinate system
     if epsg != 'Brez':
         pt.msg('Risanje mreže')
-        grid_draw = ImageDraw.Draw(grid_img)
-        grid_font = ImageFont.truetype('timesbi.ttf', 48)
-        grid_to_world_tr = rasterio.transform.AffineTransformer(rasterio.transform.from_bounds(*bounds, *grid_img.size))
-        grid_to_world_tr.colrow = lambda x, y: grid_to_world_tr.rowcol(x, y)[::-1]
-        cs_from = pyproj.CRS.from_epsg(3794)
-        cs_to = pyproj.CRS.from_epsg(int(epsg.split(':')[1]))
-        cs_from_to_tr = pyproj.Transformer.from_crs(cs_from, cs_to)
-        cs_to_from_tr = pyproj.Transformer.from_crs(cs_to, cs_from)
-
-        logger.info(f'Drawing coordinate system. - ({cs_to.name})')
-
-        if not cs_to.is_projected:
-            raise ValueError('The target coordinate system must be projected.')
-
-        superscript_map = {
-            "0": "", "1": "¹", "2": "²", "3": "³", "4": "⁴", "5": "⁵", "6": "⁶", "7": "⁷", "8": "⁸", "9": "⁹"}
-
-        grid_edge_ws = grid_to_world_tr.xy(grid_img.size[1], 0)
-        grid_edge_en = grid_to_world_tr.xy(0, grid_img.size[0])
-
-        # Convert to target coordinate system
-        grid_edge_ws = cs_from_to_tr.transform(grid_edge_ws[0], grid_edge_ws[1])
-        grid_edge_en = cs_from_to_tr.transform(grid_edge_en[0], grid_edge_en[1])
-
-        grid_edge_ws_grid = (math.ceil(grid_edge_ws[0] / 1000) * 1000, math.ceil(grid_edge_ws[1] / 1000) * 1000)
-        grid_edge_en_grid = (math.floor(grid_edge_en[0] / 1000 + 1) * 1000, math.floor(grid_edge_en[1] / 1000 + 1) * 1000)
-
-        for x in range(int(grid_edge_ws_grid[0]), int(grid_edge_en_grid[0]), 1000):
-            xline_s = grid_to_world_tr.colrow(*cs_to_from_tr.transform(x, grid_edge_ws[1]))
-            xline_n = grid_to_world_tr.colrow(*cs_to_from_tr.transform(x, grid_edge_en[1]))
-            grid_draw.line([xline_n, xline_s], fill='black')
-            cord = f'{int(x):06}'
-            txt = f'{superscript_map[cord[-6]]}{cord[-5:-3]}'
-            grid_draw.text(xline_s, txt, fill='red', align='center', anchor='lb', font=grid_font)
-            grid_draw.text(xline_n, txt, fill='red', align='center', anchor='lt', font=grid_font)
-
-        for y in range(int(grid_edge_ws_grid[1]), int(grid_edge_en_grid[1]), 1000):
-            yline_w = grid_to_world_tr.colrow(*cs_to_from_tr.transform(grid_edge_ws[0], y))
-            yline_e = grid_to_world_tr.colrow(*cs_to_from_tr.transform(grid_edge_en[0], y))
-            cord = f'{int(y):06}'
-            txt = f'{superscript_map[cord[-6]]}{cord[-5:-3]}'
-            grid_draw.text(yline_w, txt, fill='red', align='center', anchor='lb', font=grid_font)
-            grid_draw.text(yline_e, txt, fill='red', align='center', anchor='rb', font=grid_font)
-            grid_draw.line([yline_w, yline_e], fill='black')
+        draw_preview_grid(grid_img, bounds, epsg, pt.sub(0.7, 1))
     else:
         logger.info('Skipping coordinate system drawing.')
+        pt.step(1)
 
-    pt.step(1)
     return grid_img
 
 class DMV:
@@ -1600,7 +1703,7 @@ def create_map(r: dto.MapCreateRequest, pt: ProgressTracker = NoProgress):
     os.makedirs(os.path.dirname(output_file), exist_ok=True)
 
     pt.msg('Pridobivanje podatkov')
-    map_img, grid_img, map_to_world_tr, grid_to_world_tr, real_to_map_tr, map_to_grid = get_grid_and_map((r.map_size_w_m, r.map_size_h_m), (r.map_w, r.map_s, r.map_e, r.map_n), r.raster_type, r.raster_source, r.zoom_adjust, pt.sub(0, 0.3))
+    map_img, grid_img, map_to_world_tr, grid_to_world_tr, real_to_map_tr, map_to_grid = get_grid_and_map((r.map_size_w_m, r.map_size_h_m), (r.map_w, r.map_s, r.map_e, r.map_n), r.raster_type, r.raster_source, r.reamulation_layers, r.zoom_adjust, pt.sub(0, 0.3))
 
     pt.msg('Risanje mreže')
     skip_grid_lines = r.raster_type == dto.RasterType.DTK25
@@ -1675,6 +1778,58 @@ def map_preview(r: dto.MapPreviewRequest, pt: ProgressTracker = NoProgress):
     pt.step(1)
     pt.msg('Končano')
 
+def map_reambulation(r: dto.MapReambulationRequest, pt: ProgressTracker = NoProgress):
+    pt.step(0)
+    logger.info(f'Creating map reambulation. ({r.map_w}, {r.map_s}, {r.map_e}, {r.map_n}, {r.epsg}, {r.raster_source})')
+    bounds = (r.map_w, r.map_s, r.map_e, r.map_n)
+
+    pt.msg('Pridobivanje rasterskih podatkov')
+    raster_layer = get_raster_map(r.raster_type, r.raster_source, r.zoom_adjust, bounds, pt.sub(0.3, 0.4))
+    raster_img = Image.fromarray(rasterio.plot.reshape_as_image(raster_layer), 'RGB')
+
+    pt.msg('Ustvarjanje reambulacijskega sloja')
+    reambulation_img = Image.new('RGBA', raster_img.size, (0, 0, 0, 0))
+    pt.step(0.4)
+
+    pt.msg('Risanje mreže')
+    grid_img = Image.new('RGBA', raster_img.size, (0, 0, 0, 0))
+    draw_preview_grid(grid_img, bounds, r.epsg, pt.sub(0.4, 0.5))
+
+    file_bounds = f'{r.map_w}_{r.map_s}_{r.map_e}_{int(r.map_n)}'
+
+    work_dir = get_cache_dir('create_reambulation')
+    this_work_dir = os.path.join(work_dir, r.id)
+    os.makedirs(this_work_dir, exist_ok=True)
+
+    pt.msg('Shranjevanje slojev')
+    reambulation_img.save(os.path.join(this_work_dir, f'reambulacija-{file_bounds}.png'))
+    pt.step(0.6)
+    grid_img.save(os.path.join(this_work_dir, f'koordinate-{file_bounds}.png'))
+    pt.step(0.7)
+    raster_img.save(os.path.join(this_work_dir, f'osnova-{file_bounds}.png'))
+    pt.step(0.8)
+
+    transform = rasterio.transform.from_bounds(r.map_w, r.map_s, r.map_e, r.map_n, *raster_img.size)
+    world_file = [
+        f'{transform.a}\n',
+        f'{transform.d}\n',
+        f'{transform.b}\n',
+        f'{transform.e}\n',
+        f'{transform.c}\n',
+        f'{transform.f}\n',
+    ]
+    for name in ['osnova', 'koordinate', 'reambulacija']:
+        with open(os.path.join(this_work_dir, f'{name}-{file_bounds}.pgw'), 'w') as f:
+            f.writelines(world_file)
+
+    pt.msg('Arhiviranje slojev')
+    dst_dir = get_cache_dir('reambulations')
+    shutil.make_archive(os.path.join(dst_dir, r.id), 'zip', this_work_dir)
+
+    shutil.rmtree(this_work_dir, ignore_errors=True)
+    pt.step(1)
+    pt.msg('Končano')
+
 def store_error(request: dto.MapBaseRequest, e: Exception, argv: list[str]):
     error_file = os.path.join(get_cache_dir('errors'), f'{request.id}.json')
 
@@ -1722,6 +1877,8 @@ def main():
             create_map(request, pt)
         elif request.request_type == dto.RequestType.MAP_PREVIEW:
             map_preview(request, pt)
+        elif request.request_type == dto.RequestType.MAP_REAMBULATION:
+            map_reambulation(request, pt)
         else:
             raise ValueError(f'Unknown request type: {request.request_type}')
     except ProgressError as e:

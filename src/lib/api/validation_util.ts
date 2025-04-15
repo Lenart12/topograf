@@ -25,7 +25,7 @@ export class TopoFormData {
 
     const file = this.fd.get(key);
     if (!file || !(file instanceof File)) throw new Error(`Napačna datoteka za ${key}`);
-    if (file.size > 5 * 1024 * 1024) throw new Error(`Datoteka za ${key} je prevelika (max 5MiB)`);
+    if (file.size > 20 * 1024 * 1024) throw new Error(`Datoteka za ${key} je prevelika (max 20MiB)`);
     const ab = await file.arrayBuffer();
     const hash = MD5(crypto_js.lib.WordArray.create(ab)).toString();
     const dest_dir = `${TEMP_FOLDER}/uploads`;

@@ -12,7 +12,8 @@
 		type ControlPointOptions,
 		type ControlPointsConfig,
 		type ControlPointFont,
-		FormatMapCreateRequest
+		FormatMapCreateRequest,
+		FormatMapReambulationRequest
 	} from '$lib/api/dto';
 	import RequestProgressBar from '$lib/RequestProgressBar.svelte';
 	import { flip } from 'svelte/animate';
@@ -44,10 +45,12 @@
 	let edge_wgs84: boolean = true;
 	let slikal: FileList;
 	let slikad: FileList;
+	let reambulation_layers: FileList;
 	let raster_type: RasterType = 'dtk50';
 	let zoom_adjust: number = 0;
 	let control_points: ControlPoint[] = [];
 	let create_map_progress_id: string;
+	let reambulation_layers_progress_id: string;
 
 	$: raster_managed_epsg = raster_type === 'dtk25';
 
@@ -79,6 +82,7 @@
 			edge_wgs84,
 			slikal: slikal ? slikal[0] : undefined,
 			slikad: slikad ? slikad[0] : undefined,
+			reambulation_layers,
 			raster_type,
 			zoom_adjust,
 			control_points: create_control_points_json(false)
@@ -119,6 +123,57 @@
 			download_link.innerHTML = `<a class="btn variant-filled-primary" href="/maps/${map_id}" target="_blank">Odpri karto <iconify-icon icon="mdi:map-search"></iconify-icon></a>`;
 
 			return 'Karta je bila uspešno ustvarjena.';
+		})();
+	}
+
+	let reamulation_download_link: HTMLElement;
+	let get_reambulation_layers_promise: Promise<string>;
+	function get_reambulation_layers() {
+		const fd = FormatMapReambulationRequest({
+			map_w,
+			map_s,
+			map_e,
+			map_n,
+			epsg,
+			raster_type,
+			zoom_adjust,
+			map_size_w_m,
+			map_size_h_m
+		});
+
+		get_reambulation_layers_promise = (async () => {
+			reamulation_download_link.innerHTML = '';
+			const preflight = fetch('/api/map_reambulation?preflight=true', {
+				method: 'POST',
+				body: fd
+			});
+
+			const pf_response = await preflight;
+			if (!pf_response.ok) {
+				const text = await pf_response.text();
+				throw new Error(text);
+			}
+			const pf_map_id = await pf_response.text();
+			reambulation_layers_progress_id = pf_map_id;
+
+			const request = fetch('/api/map_reambulation', {
+				method: 'POST',
+				body: fd
+			});
+
+			const response = await request;
+			if (!response.ok) {
+				const text = await response.text();
+				throw new Error(text);
+			}
+
+			const zip_bytes = await response.blob();
+			const zip_blob = new Blob([zip_bytes], { type: 'application/zip' });
+			const zip_url = URL.createObjectURL(zip_blob);
+			const zip_name = `reambulacija.${map_w}_${map_s}_${map_e}_${map_n}.zip`;
+
+			reamulation_download_link.innerHTML = `<a class="btn variant-filled-primary" href="${zip_url}" download="${zip_name}">Prenesi reambulacijske sloje <iconify-icon icon="mdi:download"></iconify-icon></a>`;
+			return 'Reambulacijski sloji so bili uspešno ustvarjeni.';
 		})();
 	}
 
@@ -691,6 +746,7 @@
 									<p>Ko je izbran DTK25, je koordinatni sistem karte vedno D48/GK (EPSG:3912)</p>
 								{/if}
 
+								<h3 class="h3">WGS84 na robu</h3>
 								<div>
 									<label for="edge_wgs84">
 										<p>
@@ -709,6 +765,150 @@
 								</div>
 							</div>
 						</svelte:fragment>
+					</AccordionItem>
+					<AccordionItem>
+						<svelte:fragment slot="summary">
+							<h3 class="h3">
+								Reambulacija <iconify-icon icon="mdi:layers-edit"></iconify-icon>
+							</h3>
+						</svelte:fragment>
+						<svelte:fragment slot="content">
+							<div class="space-y-2">
+								<Accordion regionControl="variant-soft" regionPanel="variant-soft">
+									<AccordionItem>
+										<svelte:fragment slot="summary">
+											<h3 class="h3">
+												Navodila <iconify-icon icon="material-symbols:help"></iconify-icon>
+											</h3>
+										</svelte:fragment>
+										<svelte:fragment slot="content">
+											<p>
+												Reambulacija je postopek, ki omogoča, da se izrisana karta prilagodi po
+												zahtevah uporabnika. V orodju Topograf je ta postopek omogočen z uporabo
+												reambulacijskega sloja, ki se naslika čez osnovni rasterski sloj. <br />
+												<br />
+
+												Za začetek prenesi reambulacijske sloje. V .zip datoteki se nahajajo
+												naslednji sloji: prazen sloj, na katerega lahko narišeš svoje popravke
+												(reambulacija), tvoj izbran rasterski sloj, ki služi kot podlaga za risanje
+												(osnova), in sloj, ki vsebuje mrežo v izbranem koordinatnem sistemu
+												(koordinate). Zraven so še podane istoimenske .pgw datoteke, ki omogočajo
+												hitrejši vnos teh slojev v GIS programe. <br /> <br />
+
+												Vse .png datoteke naložiš v urejevalniku slik (Photoshop/GIMP/Inkscape) kot
+												svoj sloj in na reambulacijskem sloju narišeš svoje popravke. Ko končaš,
+												shrani sloj kot .png datoteko in jo naloži pred ustvarjanjem karte. <br />
+												<br />
+
+												Položaj reambulacijskega sloja na karti je definiran na dva načina:
+											</p>
+											<ul class="ul">
+												<li class="li">
+													‣ V imenu datoteke - ime datoteke mora biti v obliki "Tvoje ime za
+													sliko-vzhod_jug_zahod_sever.png", npr: "Popravki za
+													Cerknico-447136_70883_453851_75370.png"
+												</li>
+												<li class="li">
+													‣ <a
+														class="underline"
+														href="https://en.wikipedia.org/wiki/World_file"
+														target="_blank">V stranskih datotekah</a
+													> - to so datoteke s končnico .pgw, ki jih lahko generiraš z GIS programi (QGIS,
+													ArcGIS). Te omogočajo izvoz reambulacijskih slojev iz GIS programov. Ime stranske
+													datoteke mora bit enako kot ime slike, z drugo končnico. Npr: "Popravki za
+													Cerknico.png" + "Popravki za Cerknico.pgw".
+												</li>
+											</ul>
+											<p>
+												Koordinate naj bodo podane v sistemu D96/TM (EPSG:3794) in niso nujno enake
+												velikosti ali lokacije kot izbrano območje karte.
+												<br /> <br />
+
+												Pred ustvarjanjem karte naloži reambulacijske sloje, ki jih želiš uporabiti.
+												Lahko jih izbereš več hkrati. Dodani sloji se bodo prikazali na karti v
+												alfanumeričnem vrstnem redu glede na ime datoteke.
+											</p>
+
+											<p>
+												Za primer si lahko preneseš ta reambulacijski sloj in si z njim ustvariš
+												karto DTK50 nad Cerknico:
+											</p>
+											<ul>
+												<li>
+													‣ <a
+														class="underline"
+														href="Cerknica zelene ceste-447136.0_70883.0_453851.0_75370.png"
+														download="">Cerknica zelene ceste-447136.0_70883.0_453851.0_75370.png</a
+													>
+												</li>
+											</ul>
+										</svelte:fragment>
+									</AccordionItem>
+								</Accordion>
+
+								<div>
+									<label for="reambulation_layer">
+										<h3 class="h3">Reambulacijski sloji</h3>
+									</label>
+									<p class="text-sm">Izbereš lahko več datotek hkrati.</p>
+									<input
+										class="input"
+										id="reambulation_layer"
+										type="file"
+										accept="image/png,.pgw"
+										multiple
+										bind:files={reambulation_layers}
+									/>
+								</div>
+								<div class="flex flex-col justify-center items-center gap-2">
+									<div class="flex justify-center w-100%">
+										<div bind:this={reamulation_download_link}></div>
+									</div>
+									{#if get_reambulation_layers_promise}
+										{#await get_reambulation_layers_promise}
+											<div class="flex justify-center">
+												<RequestProgressBar
+													request_type="map_reambulation"
+													bind:progress_id={reambulation_layers_progress_id}
+												/>
+											</div>
+										{:then value}
+											<div class="variant-filled-info text-center">
+												<p>{value}</p>
+											</div>
+											<button class="btn variant-filled-primary" on:click={get_reambulation_layers}>
+												Ustvari nove reambulacijske sloje <iconify-icon icon="mdi:layers-plus"
+												></iconify-icon>
+											</button>
+										{:catch error}
+											<div class="variant-filled-error text-center">
+												<p>
+													<iconify-icon icon="material-symbols:error"></iconify-icon>Ups, prišlo je
+													do napake.
+												</p>
+												<cite
+													><iconify-icon icon="material-symbols:chat-error-sharp"></iconify-icon>
+													{error.message}</cite
+												>
+											</div>
+											<div class="flex justify-center w-100% mt-4">
+												<button
+													class="btn variant-filled-primary inline-block"
+													on:click={get_reambulation_layers}
+													>Poizkusi še enkrat <iconify-icon icon="mdi:map-plus"
+													></iconify-icon></button
+												>
+											</div>
+										{/await}
+									{:else}
+										<button class="btn variant-filled-primary" on:click={get_reambulation_layers}>
+											Ustvari nove reambulacijske sloje <iconify-icon icon="mdi:layers-plus"
+											></iconify-icon>
+										</button>
+									{/if}
+								</div>
+							</div></svelte:fragment
+						>
 					</AccordionItem>
 					<AccordionItem>
 						<svelte:fragment slot="summary">

@@ -52,6 +52,7 @@ class ControlPointsConfig(BaseModel):
 class RequestType(str, Enum):
     MAP_PREVIEW = "map_preview"
     CREATE_MAP = "create_map"
+    MAP_REAMBULATION = "map_reambulation"
 
 
 class MapBaseRequest(BaseModel):
@@ -152,6 +153,26 @@ class MapPreviewRequest(MapBaseRequest):
             output_folder=base.output_folder
         )
 
+class MapReambulationRequest(MapBaseRequest):
+    @classmethod
+    def from_args(cls, args: Dict[str, Any]):
+        """Create instance from command line arguments dictionary"""
+        base = MapBaseRequest.from_args(args)
+        return cls(
+            id=base.id,
+            request_type=base.request_type,
+            map_w=base.map_w,
+            map_s=base.map_s,
+            map_e=base.map_e,
+            map_n=base.map_n,
+            epsg=base.epsg,
+            raster_type=base.raster_type,
+            raster_source=base.raster_source,
+            zoom_adjust=base.zoom_adjust,
+            map_size_w_m=base.map_size_w_m,
+            map_size_h_m=base.map_size_h_m,
+            output_folder=base.output_folder
+        )
 
 class MapCreateRequest(MapBaseRequest):
     target_scale: int
@@ -161,6 +182,7 @@ class MapCreateRequest(MapBaseRequest):
     dodatno: str
     slikal: str = ""
     slikad: str = ""
+    reamulation_layers: list[str]
     control_points: ControlPointsConfig
     dmv125_folder: str
 
@@ -203,6 +225,17 @@ class MapCreateRequest(MapBaseRequest):
         control_points_data = json.loads(args["control_points"])
         control_points_config = ControlPointsConfig(**control_points_data)
         
+        # Parse reamulation_layers JSON string into list of strings
+        if args["reambulation_layers"]:
+            reamulation_layers = json.loads(args["reambulation_layers"])
+            if not isinstance(reamulation_layers, list):
+                raise ValueError('Reambulation layers must be a list of strings')
+            for layer in reamulation_layers:
+                if not isinstance(layer, str):
+                    raise ValueError('Reambulation layers must be a list of strings')
+        else:
+            reamulation_layers = []
+
         return cls(
             id=base.id,
             request_type=base.request_type,
@@ -223,6 +256,7 @@ class MapCreateRequest(MapBaseRequest):
             dodatno=args["dodatno"],
             slikal=args.get("slikal", ""),
             slikad=args.get("slikad", ""),
+            reamulation_layers=reamulation_layers,
             control_points=control_points_config,
             dmv125_folder=args.get("dmv125_folder"),
             output_folder=base.output_folder
@@ -237,8 +271,8 @@ def parse_command_line_args(args=None):
     
     # Required arguments
     parser.add_argument("--id", type=str, help="Request ID", default="", required=True)
-    parser.add_argument("--request_type", type=str, choices=["map_preview", "create_map"], 
-                        help="Type of request (map_preview or create_map)", required=True)
+    parser.add_argument("--request_type", type=str, choices=["map_preview", "create_map", "map_reambulation"], 
+                        help="Type of request (map_preview, create_map or map_reambulation)", required=True)
     parser.add_argument("--map_w", type=float, help="West bound", required=True)
     parser.add_argument("--map_s", type=float, help="South bound", required=True)
     parser.add_argument("--map_e", type=float, help="East bound", required=True)
@@ -259,6 +293,7 @@ def parse_command_line_args(args=None):
     parser.add_argument("--dodatno", type=str, help="Additional information")
     parser.add_argument("--slikal", type=str, help="Left image path", default="")
     parser.add_argument("--slikad", type=str, help="Right image path", default="")
+    parser.add_argument("--reambulation_layers", type=str, help="Reambulation layers as JSON string", default="[]")
     parser.add_argument("--control_points", type=str, help="Control points as JSON string")
     parser.add_argument("--dmv125_folder", type=str, help="DMV125 folder path")
 
@@ -282,5 +317,7 @@ def create_request_from_args(args_dict):
         return MapPreviewRequest.from_args(args_dict)
     elif request_type == "create_map":
         return MapCreateRequest.from_args(args_dict)
+    elif request_type == "map_reambulation":
+        return MapReambulationRequest.from_args(args_dict)
     else:
         raise ValueError(f"Unknown request type: {request_type}")

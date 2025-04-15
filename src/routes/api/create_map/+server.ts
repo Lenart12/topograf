@@ -75,5 +75,11 @@ export async function POST(event) {
     CreateMapProgress.finishRun(validated.id);
     if (validated.slikal && fs.existsSync(validated.slikal)) await fs.promises.unlink(validated.slikal);
     if (validated.slikad && fs.existsSync(validated.slikad)) await fs.promises.unlink(validated.slikad);
+    if (validated.reambulation_layers) {
+      const local_files = JSON.parse(validated.reambulation_layers);
+      for (const file of local_files) {
+        if (fs.existsSync(file)) await fs.promises.unlink(file);
+      }
+    }
   }
 }
