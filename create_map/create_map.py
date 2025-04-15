@@ -32,6 +32,7 @@ matplotlib.use('Agg')  # Use non-interactive backend
 import io
 from matplotlib.ticker import MaxNLocator
 import shutil
+from typing import Optional
 
 ### STATIC CONFIGURATION ###
 
@@ -282,7 +283,7 @@ def deg_to_deg_min_sec(deg, precision=0):
       s = int((deg - d - m / 60) * 3600)
     return f'{d}°{m:02}\'{s:02}"'
 
-def get_transform_for_image(filename: str, world_file: str | None, width: int, height: int) -> rasterio.transform.Affine:
+def get_transform_for_image(filename: str, world_file: Optional[str], width: int, height: int) -> rasterio.transform.Affine:
     layer_name = os.path.basename(filename)[32 + 1:].removesuffix('.png')
 
     filename = filename.removesuffix('.png')
